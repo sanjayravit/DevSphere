@@ -1,0 +1,140 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { Card, AnimatedCard } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Mail, Lock, User, TerminalSquare } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+export const LoginSignupPage = () => {
+    const [isLogin, setIsLogin] = useState(true);
+    const [formData, setFormData] = useState({ name: '', email: '', password: '' });
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+    const { login, register } = useAuth();
+    const navigate = useNavigate();
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+
+        if (!formData.email || !formData.password || (!isLogin && !formData.name)) {
+            setError('Please fill in all fields');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            if (isLogin) {
+                await login(formData.email, formData.password);
+            } else {
+                await register(formData.name, formData.email, formData.password);
+            }
+            navigate('/dashboard');
+        } catch (err) {
+            setError(err.response?.data?.message || 'Authentication failed. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleChange = (e) => {
+        setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
+
+    return (
+        <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4 relative overflow-hidden">
+            {/* Premium Background Effects */}
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-500/20 rounded-full blur-[100px]" />
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent-purple/20 rounded-full blur-[100px]" />
+            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none"></div>
+
+            <AnimatedCard className="w-full max-w-md relative z-10 border border-white/10 shadow-2xl bg-dark-800/80 backdrop-blur-2xl">
+                <div className="text-center mb-8">
+                    <div className="mx-auto w-12 h-12 rounded-xl bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center shadow-neon-purple mb-4">
+                        <TerminalSquare size={24} className="text-white" />
+                    </div>
+                    <h2 className="text-3xl font-display font-bold text-white mb-2">
+                        {isLogin ? 'Welcome back' : 'Create an account'}
+                    </h2>
+                    <p className="text-gray-400">
+                        {isLogin ? 'Enter your details to access your workspace.' : 'Join the most advanced developer platform.'}
+                    </p>
+                </div>
+
+                {error && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm text-center"
+                    >
+                        {error}
+                    </motion.div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <AnimatePresence mode="popLayout">
+                        {!isLogin && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                                exit={{ opacity: 0, height: 0, scale: 0.9 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <Input
+                                    icon={User}
+                                    name="name"
+                                    placeholder="Full Name"
+                                    value={formData.name}
+                                    onChange={handleChange}
+                                />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    <Input
+                        type="email"
+                        icon={Mail}
+                        name="email"
+                        placeholder="Email Address"
+                        value={formData.email}
+                        onChange={handleChange}
+                    />
+
+                    <Input
+                        type="password"
+                        icon={Lock}
+                        name="password"
+                        placeholder="Password"
+                        value={formData.password}
+                        onChange={handleChange}
+                    />
+
+                    <Button
+                        type="submit"
+                        className="w-full mt-6"
+                        isLoading={loading}
+                    >
+                        {isLogin ? 'Sign In' : 'Sign Up'}
+                    </Button>
+                </form>
+
+                <div className="mt-6 text-center">
+                    <button
+                        onClick={() => {
+                            setIsLogin(!isLogin);
+                            setError('');
+                        }}
+                        className="text-gray-400 hover:text-white transition-colors text-sm"
+                    >
+                        {isLogin ? "Don't have an account? " : "Already have an account? "}
+                        <span className="text-primary-400 font-medium">
+                            {isLogin ? 'Sign up' : 'Sign in'}
+                        </span>
+                    </button>
+                </div>
+            </AnimatedCard>
+        </div>
+    );
+};
