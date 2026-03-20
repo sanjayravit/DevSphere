@@ -36,7 +36,7 @@ export const SocialFeedPage = () => {
                 text: newPost,
                 likes: [],
             });
-            setPosts([res.data, ...posts]);
+            setPosts(prevPosts => [res.data, ...prevPosts]);
             setNewPost('');
         } catch (err) {
             console.error(err);
@@ -90,10 +90,10 @@ export const SocialFeedPage = () => {
                         <AnimatedCard key={post._id || i} delay={0.1 * (i % 5)} className="hover:border-white/10 transition-colors">
                             <div className="flex gap-4 mb-4">
                                 <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center border border-white/10 shrink-0 text-gray-400 uppercase font-medium">
-                                    {typeof post.userId === 'string' ? post.userId[0] : 'U'}
+                                    {typeof post.userId === 'string' ? post.userId[0] : (post.userId?.name?.[0] || post.userId?.username?.[0] || 'U')}
                                 </div>
                                 <div>
-                                    <h4 className="text-white font-medium">{post.userId}</h4>
+                                    <h4 className="text-white font-medium">{typeof post.userId === 'string' ? post.userId : (post.userId?.name || post.userId?.username || 'Unknown')}</h4>
                                     <p className="text-xs text-gray-500">Just now</p>
                                 </div>
                             </div>

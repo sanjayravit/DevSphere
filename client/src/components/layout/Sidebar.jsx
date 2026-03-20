@@ -14,19 +14,19 @@ import { cn } from '../ui/Button';
 
 const NavItem = ({ to, icon: Icon, label }) => {
     return (
-        <NavLink
-            to={to}
-            className={({ isActive }) =>
-                cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium",
+        <NavLink to={to}>
+            {({ isActive }) => (
+                <div className={cn(
+                    "flex items-center gap-3 px-4 py-3 rounded-xl transition duration-500 font-medium relative overflow-hidden group",
                     isActive
-                        ? "bg-primary-500/10 text-primary-400 shadow-[inset_2px_0_0_#6366f1]"
+                        ? "bg-primary-500/10 text-primary-400 shadow-[inset_0_0_20px_rgba(99,102,241,0.15)] before:absolute before:left-0 before:top-1/4 before:bottom-1/4 before:w-1 before:bg-primary-500 before:rounded-r-full before:shadow-[0_0_12px_#6366f1]"
                         : "text-gray-400 hover:text-white hover:bg-white/5"
-                )
-            }
-        >
-            <Icon size={20} />
-            <span>{label}</span>
+                )}>
+                    <Icon size={20} className={cn("relative z-10 transition duration-300", isActive ? "scale-110 drop-shadow-[0_0_8px_rgba(99,102,241,0.6)]" : "group-hover:scale-110")} />
+                    <span className="relative z-10 tracking-wide">{label}</span>
+                    <div className="absolute inset-0 bg-gradient-to-r from-primary-500/0 to-primary-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                </div>
+            )}
         </NavLink>
     );
 };

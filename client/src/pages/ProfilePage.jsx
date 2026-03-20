@@ -3,7 +3,7 @@ import axios from 'axios';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { Github, Users, Star, GitRepoForked, ExternalLink, MapPin, Building, Link as LinkIcon } from 'lucide-react';
+import { Github, Users, Star, GitFork, ExternalLink, MapPin, Building, Link as LinkIcon } from 'lucide-react';
 
 export const ProfilePage = () => {
     const [username, setUsername] = useState('');
@@ -160,8 +160,22 @@ export const ProfilePage = () => {
                                             <Star size={14} /> {repo.stargazers_count}
                                         </div>
                                         <div className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors">
-                                            <GitRepoForked size={14} /> {repo.forks_count}
+                                            <GitFork size={14} /> {repo.forks_count}
                                         </div>
+                                    </div>
+
+                                    {/* Open in DevSphere action button */}
+                                    <div className="mt-4">
+                                        <Button
+                                            variant="outline"
+                                            className="w-full gap-2 border-white/10 hover:border-primary-500/50"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(`/repo/${repo.owner.login}/${repo.name}`, "_blank");
+                                            }}
+                                        >
+                                            <LinkIcon size={16} /> Open in DevSphere Workspace
+                                        </Button>
                                     </div>
                                 </AnimatedCard>
                             ))}

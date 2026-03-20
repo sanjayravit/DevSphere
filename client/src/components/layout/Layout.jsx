@@ -21,10 +21,13 @@ export const Layout = () => {
     }
 
     return (
-        <div className="min-h-screen bg-dark-900 text-gray-200 flex">
+        <div className="min-h-screen bg-dark-900 text-gray-200 flex relative overflow-hidden">
             {/* Background ambient effects */}
-            <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-primary-500/10 blur-[120px] pointer-events-none" />
-            <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-accent-purple/10 blur-[120px] pointer-events-none" />
+            <div className="fixed inset-0 bg-grid-pattern opacity-30 pointer-events-none z-0"></div>
+            <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay pointer-events-none z-0"></div>
+
+            <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-primary-500/20 blur-[150px] animate-blob pointer-events-none z-0" />
+            <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-accent-purple/20 blur-[150px] animate-blob animation-delay-4000 pointer-events-none z-0" />
 
             <Sidebar />
 

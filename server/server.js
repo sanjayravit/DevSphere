@@ -27,14 +27,38 @@ app.use("/api/profile", profileRoutes);
 const postRoutes = require("./routes/post");
 app.use("/api/posts", postRoutes);
 
+const codeRoutes = require("./routes/code");
+app.use("/api/code", codeRoutes);
+
+const aiRoutes = require("./routes/ai");
+app.use("/api/ai", aiRoutes);
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" }
 });
 
 io.on("connection", (socket) => {
-  socket.on("code-change", (data) => {
-    socket.broadcast.emit("code-update", data);
+  socket.on("join-room", ({ roomId, user }) => {
+    socket.join(roomId);
+    socket.to(roomId).emit("user-joined", { socketId: socket.id, user });
+  });
+
+  socket.on("code-change", ({ roomId, code }) => {
+    socket.to(roomId).emit("code-update", code);
+  });
+
+  socket.on("cursor-change", ({ roomId, cursorData }) => {
+    socket.to(roomId).emit("cursor-update", { socketId: socket.id, ...cursorData });
+  });
+
+  socket.on("chat-message", ({ roomId, message }) => {
+    socket.to(roomId).emit("chat-update", message);
+  });
+
+  socket.on("disconnect", () => {
+    // Basic leave handling across all rooms
+    io.emit("user-left", socket.id);
   });
 });
 

@@ -9,8 +9,13 @@
     @apply bg-dark-900 text-gray-200 font-sans antialiased selection:bg-primary-500/30 selection:text-white;
     overflow-x: hidden;
   }
-  
-  h1, h2, h3, h4, h5, h6 {
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     @apply font-display text-white tracking-tight;
   }
 }
@@ -23,11 +28,18 @@
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-accent-blue via-primary-400 to-accent-purple;
   }
-  
+
+  .bg-grid-pattern {
+    background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(circle at center, black 30%, transparent 80%);
+  }
+
   .hide-scroll::-webkit-scrollbar {
     display: none;
   }
-  
+
   .hide-scroll {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -41,14 +53,14 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0B0E; 
+  background: #0B0B0E;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2a35; 
+  background: #2a2a35;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f50; 
+  background: #3f3f50;
 }

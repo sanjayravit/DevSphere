@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
                     // Verify token format
                     const decoded = jwtDecode(token);
                     // If we want to fetch the real user profile:
-                    const res = await api.get('/auth/me' || '/profile').catch(() => null);
+                    const res = await api.get('/auth/me').catch(() => null);
                     if (res && res.data) {
                         setUser(res.data);
                     } else {
