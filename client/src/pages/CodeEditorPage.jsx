@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { io } from 'socket.io-client';
 import api from '../services/api';
+import { useCompletion } from '@ai-sdk/react';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send } from 'lucide-react';
@@ -21,12 +22,26 @@ const LANGUAGES = {
 };
 
 export const CodeEditorPage = () => {
+    const [language, setLanguage] = useState('javascript');
     const [code, setCode] = useState('// Welcome to DevSphere Collaborative Editor\n// Start typing here...');
     const [output, setOutput] = useState('');
     const [isRunning, setIsRunning] = useState(false);
-    const [language, setLanguage] = useState('javascript');
-    const [aiSuggestions, setAiSuggestions] = useState('');
-    const [isAiLoading, setIsAiLoading] = useState(false);
+
+    const lastActionRef = useRef(null);
+
+    // Vercel AI SDK Streaming Hook
+    const { completion, complete, isLoading: isAiLoading } = useCompletion({
+        api: 'http://localhost:5000/api/ai/code-help',
+        onFinish: (prompt, completionResult) => {
+            if (lastActionRef.current === 'optimize') {
+                setCode(completionResult);
+                if (socketRef.current) socketRef.current.emit('code-change', { roomId, code: completionResult });
+            }
+        },
+        onError: (err) => {
+            console.error("AI Streaming Error:", err);
+        }
+    });
 
     // Collaboration state
     const { user } = useAuth();
@@ -200,23 +215,28 @@ export const CodeEditorPage = () => {
     };
 
     const askAi = async (action) => {
-        setIsAiLoading(true);
-        setAiSuggestions('');
-        try {
-            const selectedCode = editorRef.current?.getModel().getValueInRange(editorRef.current?.getSelection());
-            const codeToSend = selectedCode || code;
+        lastActionRef.current = action;
+        const selectedCode = editorRef.current?.getModel().getValueInRange(editorRef.current?.getSelection());
+        const codeToSend = selectedCode || code;
 
-            // Call AI endpoint
-            const res = await api.post('/ai/code-help', {
-                action: action,
-                code: codeToSend
-            });
+        // Trigger the Vercel AI SDK stream
+        complete(codeToSend, {
+            body: { action }
+        });
+    };
 
-            setAiSuggestions(res.data.suggestion || res.data.message || 'AI analyzing complete.');
-        } catch (err) {
-            setAiSuggestions(`AI Assistant Error: ${err.message}`);
-        } finally {
-            setIsAiLoading(false);
+    const handleLanguageChange = (e) => {
+        const newLang = e.target.value;
+        setLanguage(newLang);
+
+        let prefix = "//";
+        if (newLang === 'python') prefix = "#";
+
+        const boilerplate = `${prefix} Welcome to DevSphere Collaborative Editor\n${prefix} Start typing here...`;
+
+        if (code.includes('Welcome to DevSphere Collaborative Editor')) {
+            setCode(boilerplate);
+            if (socketRef.current) socketRef.current.emit('code-change', { roomId, code: boilerplate });
         }
     };
 
@@ -232,7 +252,7 @@ export const CodeEditorPage = () => {
                     <div className="flex gap-4 items-center">
                         <select
                             value={language}
-                            onChange={(e) => setLanguage(e.target.value)}
+                            onChange={handleLanguageChange}
                             className="bg-dark-800 border border-white/10 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-primary-500 transition-colors"
                         >
                             {Object.entries(LANGUAGES).map(([key, lang]) => (
@@ -361,9 +381,9 @@ export const CodeEditorPage = () => {
                                     <Sparkles className="animate-spin" />
                                     <p className="text-sm font-medium animate-pulse">Analyzing code…</p>
                                 </div>
-                            ) : aiSuggestions ? (
+                            ) : completion ? (
                                 <div className="prose prose-invert prose-sm text-gray-300">
-                                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed bg-transparent p-0 m-0">{aiSuggestions}</pre>
+                                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed bg-transparent p-0 m-0">{completion}</pre>
                                 </div>
                             ) : (
                                 <div className="h-full flex flex-col items-center justify-center text-gray-500 text-center px-4 pt-10">

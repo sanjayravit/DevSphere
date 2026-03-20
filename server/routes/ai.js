@@ -1,33 +1,26 @@
 const router = require("express").Router();
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 const multer = require("multer");
+const { streamText } = require("ai");
+const { createGoogleGenerativeAI } = require("@ai-sdk/google");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post("/resume-upload", upload.single("file"), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: "No file uploaded" });
-        }
+const pdfParse = require("pdf-parse");
 
-        let text = "";
-        const ext = req.file.originalname.split('.').pop().toLowerCase();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key_to_prevent_crash");
 
-        const pdfParse = require("pdf-parse");
+const analyzeResumeWithGemini = async (text) => {
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY is missing. Please add it to your server/.env file.");
+    }
 
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key_to_prevent_crash");
+    const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        generationConfig: { responseMimeType: "application/json" }
+    });
 
-        const analyzeResumeWithGemini = async (text) => {
-            if (!process.env.GEMINI_API_KEY) {
-                throw new Error("GEMINI_API_KEY is missing. Please add it to your server/.env file.");
-            }
-
-            const model = genAI.getGenerativeModel({
-                model: "gemini-1.5-flash",
-                generationConfig: { responseMimeType: "application/json" }
-            });
-
-            const prompt = `You are a world-class Fortune 500 ATS (Applicant Tracking System) and Senior Recruiter. 
+    const prompt = `You are a world-class Fortune 500 ATS (Applicant Tracking System) and Senior Recruiter. 
 Analyze the following resume text strictly and thoroughly. 
 Critique their metrics, action verbs, formatting, and overall impact.
 
@@ -43,76 +36,91 @@ Resume Text:
 ${text}
 `;
 
-            const result = await model.generateContent(prompt);
-            return JSON.parse(result.response.text());
+    const result = await model.generateContent(prompt);
+    return JSON.parse(result.response.text());
+};
+
+router.post("/resume-upload", upload.single("file"), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+        let text = "";
+        const ext = req.file.originalname.split('.').pop().toLowerCase();
+
+        if (ext === "pdf") {
+            const data = await pdfParse(req.file.buffer);
+            text = data.text;
+        } else if (ext === "txt") {
+            text = req.file.buffer.toString("utf-8");
+        } else {
+            return res.status(400).json({ error: "Unsupported file type. Upload PDF or TXT." });
+        }
+
+        const analysis = await analyzeResumeWithGemini(text);
+        res.json(analysis);
+
+    } catch (error) {
+        console.error("Resume parse/AI error:", error);
+        res.status(500).json({ error: error.message || "Failed to analyze document." });
+    }
+});
+
+router.post("/resume", async (req, res) => {
+    try {
+        const text = req.body.text;
+        if (!text) return res.status(400).json({ error: "No text provided" });
+
+        const analysis = await analyzeResumeWithGemini(text);
+        res.json(analysis);
+    } catch (error) {
+        console.error("Resume parse/AI error:", error);
+        res.status(500).json({ error: error.message || "Failed to analyze document." });
+    }
+});
+
+router.post("/code-help", async (req, res) => {
+    // Vercel AI SDK useCompletion sends the text as `prompt`, not `code`.
+    const { action, prompt } = req.body;
+    const code = prompt; // Alias for our logic
+
+    if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: "Configuration Error: The server is missing the GEMINI_API_KEY environment variable. Please add it to server/.env to enable the DevSphere AI Co-pilot." });
+    }
+
+    try {
+        const customGoogle = createGoogleGenerativeAI({
+            apiKey: process.env.GEMINI_API_KEY
+        });
+        const promptContexts = {
+            'explain': "You are an expert Software Engineer AI. Explain the functionality of the following code logically and concisely. DO NOT find bugs, and DO NOT suggest optimizations. Focus strictly on explaining what the code currently does.",
+            'fix': "You are a strict code review AI. Analyze the following code strictly for bugs, errors, or vulnerabilities. Point out the bugs clearly and provide the corrected code. Do NOT explain the general functionality.",
+            'optimize': "You are an automated code solver AI. Refactor and optimize the following code to eliminate all errors and ensure it works perfectly. Provide ONLY the finalized, fully working code. Do NOT include any conversational text, explanations, or markdown code block syntax (like ```javascript). Return ONLY the raw code."
         };
 
-        router.post("/resume-upload", upload.single("file"), async (req, res) => {
-            try {
-                if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+        const instruction = promptContexts[action] || "Please analyze and assist with the following code snippet:";
+        const finalPrompt = `Code to analyze:\n\`\`\`\n${code}\n\`\`\`\n\nPlease format your response in clean Markdown.`;
 
-                let text = "";
-                const ext = req.file.originalname.split('.').pop().toLowerCase();
-
-                if (ext === "pdf") {
-                    const data = await pdfParse(req.file.buffer);
-                    text = data.text;
-                } else if (ext === "txt") {
-                    text = req.file.buffer.toString("utf-8");
-                } else {
-                    return res.status(400).json({ error: "Unsupported file type. Upload PDF or TXT." });
-                }
-
-                const analysis = await analyzeResumeWithGemini(text);
-                res.json(analysis);
-
-            } catch (error) {
-                console.error("Resume parse/AI error:", error);
-                res.status(500).json({ error: error.message || "Failed to analyze document." });
-            }
+        const result = streamText({
+            model: customGoogle('gemini-1.5-flash'), // Reverting to native 1.5 since 2.5 is unstable
+            system: instruction,
+            prompt: finalPrompt,
         });
 
-        router.post("/resume", async (req, res) => {
-            try {
-                const text = req.body.text;
-                if (!text) return res.status(400).json({ error: "No text provided" });
-
-                const analysis = await analyzeResumeWithGemini(text);
-                res.json(analysis);
-            } catch (error) {
-                console.error("Resume parse/AI error:", error);
-                res.status(500).json({ error: error.message || "Failed to analyze document." });
-            }
+        res.writeHead(200, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache'
         });
 
-        router.post("/code-help", async (req, res) => {
-            const { action, code } = req.body;
+        // Native AsyncIterable chunk streaming (bypassing the missing pipe wrapper functions)
+        for await (const chunk of result.textStream) {
+            res.write(chunk);
+        }
+        res.end();
+    } catch (error) {
+        console.error("Gemini AI API Error:", error);
+        res.status(500).json({ error: `AI Service Error: ${error.message}. Please verify your API key and network connection.` });
+    }
+});
 
-            if (!process.env.GEMINI_API_KEY) {
-                return res.json({ suggestion: "⚠️ **Configuration Error**: The server is missing the `GEMINI_API_KEY` environment variable. Please add it to `server/.env` to enable the DevSphere AI Co-pilot." });
-            }
-
-            try {
-                const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-                const promptContexts = {
-                    'explain': "You are a Senior Software Engineer AI. Explain the following code snippet logically and concisely. Highlight its purpose and key mechanics.",
-                    'fix': "You are a strict code review AI. Analyze the following code for bugs, errors, or security vulnerabilities and provide the corrected code along with an explanation of your fixes.",
-                    'optimize': "You are an expert performance engineering AI. Optimize the following code for speed, memory usage, or readability without altering its core functionality. Explain what you optimized."
-                };
-
-                const instruction = promptContexts[action] || "Please analyze and assist with the following code snippet:";
-                const finalPrompt = `${instruction}\n\nCode to analyze:\n\`\`\`\n${code}\n\`\`\`\n\nPlease format your response in clean Markdown.`;
-
-                const result = await model.generateContent(finalPrompt);
-                const suggestion = result.response.text();
-
-                res.json({ suggestion });
-            } catch (error) {
-                console.error("Gemini AI API Error:", error);
-                res.status(500).json({ suggestion: `**AI Service Error**: ${error.message}. Please verify your API key and network connection.` });
-            }
-        });
-
-        module.exports = router;
+module.exports = router;

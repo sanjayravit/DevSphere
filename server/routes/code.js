@@ -20,7 +20,6 @@ router.post("/run", async (req, res) => {
       save: false
     });
 
-    // Map Wandbox output back to the format CodeEditorPage expects
     res.json({
       stdout: response.data.program_message || "",
       stderr: response.data.program_error || "",
