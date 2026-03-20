@@ -1,7 +1,7 @@
 <!-- 🔥 DEVSPHERE BANNER -->
 
 <h1 align="center">🚀 DevSphere</h1>
-<h3 align="center">The Future of Developer Collaboration</h3>
+<h3 align="center">The operating system for developers.</h3>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-Active%20Development-blueviolet?style=for-the-badge"/>
