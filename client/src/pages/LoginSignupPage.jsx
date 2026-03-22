@@ -28,7 +28,7 @@ export const LoginSignupPage = () => {
     }, [searchParams]);
 
     const handleGithubLogin = () => {
-        window.location.href = 'http://localhost:5050/api/auth/github';
+        window.location.href = process.env.REACT_APP_GITHUB_AUTH_URL;
     };
 
     const handleSubmit = async (e) => {

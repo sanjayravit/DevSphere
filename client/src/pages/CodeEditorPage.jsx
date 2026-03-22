@@ -101,7 +101,7 @@ export const CodeEditorPage = () => {
     useEffect(() => {
         if (!projectId) return;
 
-        socketRef.current = io('http://localhost:5050');
+        socketRef.current = io(process.env.REACT_APP_SOCKET_URL);
 
         socketRef.current.emit("join-room", { roomId: projectId, user: latestUser.current || { name: 'Anonymous' } });
 

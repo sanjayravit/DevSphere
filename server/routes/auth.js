@@ -103,10 +103,17 @@ router.get('/github/callback', async (req, res) => {
     let user = await User.findOne({ email: primaryEmail });
     if (!user) {
       user = new User({
+        username: userData.login,
         name: userData.name || userData.login,
         email: primaryEmail,
+        avatar: userData.avatar_url,
         password: 'github_oauth_dummy_' + Date.now() + Math.random(),
       });
+      await user.save();
+    } else {
+      // Update avatar if it changed
+      user.avatar = userData.avatar_url;
+      user.username = user.username || userData.login;
       await user.save();
     }
 

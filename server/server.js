@@ -15,7 +15,10 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: "https://dev-sphere-sj.vercel.app",
+  credentials: true
+}));
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -64,7 +67,10 @@ app.use((err, req, res, next) => {
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: {
+    origin: "https://dev-sphere-sj.vercel.app",
+    methods: ["GET", "POST"]
+  }
 });
 
 io.on("connection", (socket) => {

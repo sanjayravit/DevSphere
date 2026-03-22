@@ -1,0 +1,16 @@
+{
+    "name": "devsphere-monorepo",
+    "version": "1.0.0",
+    "description": "DevSphere Monorepo Root",
+    "main": "server/server.js",
+    "scripts": {
+        "install-all": "npm install && cd client && npm install && cd ../server && npm install",
+        "build": "cd client && npm run build",
+        "start": "cd server && npm start",
+        "server": "cd server && npm start",
+        "client": "cd client && npm start"
+    },
+    "keywords": [],
+    "author": "Sanju",
+    "license": "ISC"
+}
