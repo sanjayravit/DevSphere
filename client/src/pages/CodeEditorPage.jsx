@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import api from '../services/api';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Play, Sparkles, Bug, Zap, MessageSquare, Send, Save, FileCode, GitCommit, Code2 } from 'lucide-react';
+import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send, Save, FileCode, GitCommit, GitBranch, Code2, Trash2, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useParams } from 'react-router-dom';
 
