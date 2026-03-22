@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Search, Download, Code, Sparkles, TerminalSquare, Box } from 'lucide-react';
+import { Download, Code, Sparkles, TerminalSquare, Box } from 'lucide-react';
 import api from '../services/api';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { AnimatedCard } from '../components/ui/Card';
