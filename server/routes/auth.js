@@ -111,7 +111,7 @@ router.get('/github/callback', async (req, res) => {
     }
 
     const payload = { user: { id: user.id } };
-    jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' }, (err, token) => {
+    jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' }, (err, token) => {
       if (err) throw err;
       // Native redirect back to FrontEnd with the new valid platform token securely attached to the URL fragment
       res.redirect(`http://localhost:3000/login?token=${token}`);
