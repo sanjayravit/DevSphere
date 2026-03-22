@@ -42,6 +42,18 @@ export const AuthProvider = ({ children }) => {
         return res.data;
     };
 
+    const setAuthToken = async (token) => {
+        localStorage.setItem('token', token);
+        try {
+            const decoded = jwtDecode(token);
+            const res = await api.get('/auth/me').catch(() => null);
+            setUser(res?.data || decoded);
+        } catch (err) {
+            console.error("Set token error", err);
+            setUser(jwtDecode(token));
+        }
+    };
+
     const register = async (name, email, password) => {
         const res = await api.post('/auth/register', { name, email, password });
         localStorage.setItem('token', res.data.token);
@@ -55,7 +67,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, setAuthToken, loading }}>
             {!loading && children}
         </AuthContext.Provider>
     );

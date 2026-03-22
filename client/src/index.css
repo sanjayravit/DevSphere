@@ -26,7 +26,8 @@
   }
 
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-accent-blue via-primary-400 to-accent-purple;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400;
+    filter: drop-shadow(0 0 12px rgba(129, 140, 248, 0.4));
   }
 
   .bg-grid-pattern {

@@ -10,9 +10,16 @@ module.exports = function (req, res, next) {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || "fallback_dev_secret");
-        req.user = decoded;
-        next();
+        // Robustly handle both { user: { id } } and direct { id } payloads
+        const userPayload = decoded.user || decoded;
+
+        if (!userPayload || !userPayload.id) {
+            return res.status(401).json({ msg: "Token payload is malformed" });
+        }
+
+        req.user = userPayload;
+        return next();
     } catch (err) {
-        res.status(401).json({ msg: "Token is not valid" });
+        return res.status(401).json({ msg: "Token is not valid" });
     }
 };

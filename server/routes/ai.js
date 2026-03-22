@@ -1,8 +1,10 @@
-const router = require("express").Router();
+const express = require("express");
+const router = express.Router();
 const multer = require("multer");
-const { streamText } = require("ai");
-const { createGoogleGenerativeAI } = require("@ai-sdk/google");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const auth = require("../middleware/auth");
+const Project = require("../models/Project");
+const Workspace = require("../models/Workspace");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -78,48 +80,78 @@ router.post("/resume", async (req, res) => {
     }
 });
 
-router.post("/code-help", async (req, res) => {
-    // Vercel AI SDK useCompletion sends the text as `prompt`, not `code`.
-    const { action, prompt } = req.body;
-    const code = prompt; // Alias for our logic
+router.post("/copilot", auth, async (req, res) => {
+    const { action, code, projectId, message, targetLanguage } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
-        return res.status(500).json({ error: "Configuration Error: The server is missing the GEMINI_API_KEY environment variable. Please add it to server/.env to enable the DevSphere AI Co-pilot." });
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "dummy_key_to_prevent_crash") {
+        return res.status(500).json({ error: "Configuration Error: GEMINI_API_KEY is missing in server/.env" });
     }
 
     try {
-        const customGoogle = createGoogleGenerativeAI({
-            apiKey: process.env.GEMINI_API_KEY
-        });
-        const promptContexts = {
-            'explain': "You are an expert Software Engineer AI. Explain the functionality of the following code logically and concisely. DO NOT find bugs, and DO NOT suggest optimizations. Focus strictly on explaining what the code currently does.",
-            'fix': "You are a strict code review AI. Analyze the following code strictly for bugs, errors, or vulnerabilities. Point out the bugs clearly and provide the corrected code. Do NOT explain the general functionality.",
-            'optimize': "You are an automated code solver AI. Refactor and optimize the following code to eliminate all errors and ensure it works perfectly. Provide ONLY the finalized, fully working code. Do NOT include any conversational text, explanations, or markdown code block syntax (like ```javascript). Return ONLY the raw code."
-        };
+        let history = [];
+        let project = null;
 
-        const instruction = promptContexts[action] || "Please analyze and assist with the following code snippet:";
-        const finalPrompt = `Code to analyze:\n\`\`\`\n${code}\n\`\`\`\n\nPlease format your response in clean Markdown.`;
+        // Pull persistent project chat history for Gemini memory
+        if (projectId) {
+            project = await Project.findById(projectId);
+            if (!project) return res.status(404).json({ error: "Project not found" });
 
-        const result = streamText({
-            model: customGoogle('gemini-1.5-flash'), // Reverting to native 1.5 since 2.5 is unstable
-            system: instruction,
-            prompt: finalPrompt,
-        });
+            const workspace = await Workspace.findOne({ _id: project.workspaceId, members: req.user.id });
+            if (!workspace) return res.status(401).json({ error: "Unauthorized access to this workspace project" });
 
-        res.writeHead(200, {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Transfer-Encoding': 'chunked',
-            'Cache-Control': 'no-cache'
-        });
-
-        // Native AsyncIterable chunk streaming (bypassing the missing pipe wrapper functions)
-        for await (const chunk of result.textStream) {
-            res.write(chunk);
+            history = project.chatHistory.map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.content }]
+            }));
         }
-        res.end();
+
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+        let instruction = "";
+        if (action === "explain") {
+            instruction = "Explain this code clearly for a developer. Do NOT include bug fixing or optimization.";
+        } else if (action === "bugs") {
+            instruction = "Find bugs and issues in this code and explain them. Do NOT explain the full code.";
+        } else if (action === "optimize") {
+            instruction = "Optimize this code, fix errors, and return improved version only. Do NOT include conversational text or markdown code blocks like ```javascript.";
+        } else if (action === "chat") {
+            instruction = `The user is asking a direct question regarding the code context. Question: ${message}`;
+        } else if (action === "project-query") {
+            instruction = `The user is querying the ENTIRE CODEBASE architecture. Answer their question: ${message}\n\nProject Files Reference Matrix:\n${project?.files?.map(f => `--- File: ${f.name} ---\n${f.content}\n`).join('\n') || 'No files found.'}`;
+        } else if (action === "lint") {
+            const schema = `[{"line": 5, "message": "Expected comma"}]`;
+            instruction = `Analyze this code for syntax errors and obvious logic bugs. Return EXACTLY a raw JSON array matching this schema: ${schema}. If perfect, return []. Do NOT output markdown ticks or conversational text.`;
+        } else if (action === "continue") {
+            instruction = "Look at the context of this code and explicitly generate the next logical lines or functions. ONLY return the new code to append, do not output conversational text or markdown blocks like \`\`\`javascript.";
+        } else if (action === "refactor") {
+            instruction = "Refactor this entire file to achieve better performance, readability, and modern styling. Return ONLY the refactored code without markdown blocks like \`\`\`javascript.";
+        } else if (action === "convert") {
+            instruction = `Convert this code to ${req.body.targetLanguage || 'a modern format'}. Return ONLY the converted code without markdown blocks like \`\`\`javascript.`;
+        } else {
+            instruction = "Analyze this code.";
+        }
+
+        const finalPrompt = `${instruction} \n\nCode State: \n${code} `;
+
+        // Feed historical persistence arrays into Gemini
+        const chat = model.startChat({ history });
+
+        const result = await chat.sendMessage([{ text: finalPrompt }]);
+        const text = result.response.text();
+
+        // Record backend interaction layer in the DB memory arrays
+        if (project) {
+            project.chatHistory.push(
+                { role: 'user', content: finalPrompt },
+                { role: 'model', content: text }
+            );
+            await project.save();
+        }
+
+        res.json({ result: text });
     } catch (error) {
-        console.error("Gemini AI API Error:", error);
-        res.status(500).json({ error: `AI Service Error: ${error.message}. Please verify your API key and network connection.` });
+        console.error("Copilot AI Error:", error);
+        res.status(500).json({ error: "Failed to generate AI response. Check your API key." });
     }
 });
 

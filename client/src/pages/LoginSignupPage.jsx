@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { Mail, Lock, User, TerminalSquare } from 'lucide-react';
+import { Mail, Lock, User, TerminalSquare, Github } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const LoginSignupPage = () => {
@@ -12,8 +12,24 @@ export const LoginSignupPage = () => {
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login, register } = useAuth();
+    const { login, register, setAuthToken } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
+    useEffect(() => {
+        const token = searchParams.get('token');
+        if (token) {
+            setLoading(true);
+            setAuthToken(token).then(() => navigate('/dashboard'));
+        }
+        const err = searchParams.get('error');
+        if (err) setError("GitHub authentication failed.");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
+
+    const handleGithubLogin = () => {
+        window.location.href = 'http://localhost:5050/api/auth/github';
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -33,7 +49,7 @@ export const LoginSignupPage = () => {
             }
             navigate('/dashboard');
         } catch (err) {
-            setError(err.response?.data?.message || 'Authentication failed. Please try again.');
+            setError(err.response?.data?.error || 'Authentication failed. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -120,7 +136,24 @@ export const LoginSignupPage = () => {
                     </Button>
                 </form>
 
-                <div className="mt-6 text-center">
+                <div className="relative my-6">
+                    <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-white/10"></div>
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                        <span className="px-2 bg-dark-800/80 text-gray-500">Or continue with</span>
+                    </div>
+                </div>
+
+                <Button
+                    variant="secondary"
+                    onClick={handleGithubLogin}
+                    className="w-full bg-[#24292e] text-white hover:bg-[#2f363d] border-white/10 flex items-center justify-center gap-3"
+                >
+                    <Github size={18} /> Default GitHub Proxy
+                </Button>
+
+                <div className="mt-8 text-center">
                     <button
                         onClick={() => {
                             setIsLogin(!isLogin);

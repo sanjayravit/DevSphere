@@ -1,27 +1,42 @@
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { AnimatedCard } from '../components/ui/Card';
-import { Activity, GitMerge, Star, Users, FolderDot } from 'lucide-react';
+import { Activity, GitMerge, Star, Users, FolderDot, Sparkles, Code2, HeartPulse, Bug } from 'lucide-react';
 import { motion } from 'framer-motion';
-
-const MOCK_ACTIVITY = [1, 2, 3, 4];
-
-const PINNED_PROJECTS = [
-    { name: 'DevSphere App', lang: 'TypeScript' },
-    { name: 'Gemini Integration', lang: 'Python' },
-    { name: 'UI Components', lang: 'React' }
-];
-
-const STATS_DATA = [
-    { label: 'Active Projects', value: '12', icon: FolderDot, color: 'text-accent-blue' },
-    { label: 'Total Commits', value: '2,841', icon: GitMerge, color: 'text-primary-500' },
-    { label: 'Followers', value: '841', icon: Users, color: 'text-accent-purple' },
-    { label: 'Stars Earned', value: '4.2k', icon: Star, color: 'text-yellow-500' },
-];
+import { useWorkspace } from '../context/WorkspaceContext';
+import { useNavigate } from 'react-router-dom';
+import { AnimatedCard } from '../components/ui/Card';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import api from '../services/api';
 
 export const Dashboard = () => {
     const { user } = useAuth();
+    const { activeWorkspace, projects, loading } = useWorkspace();
+    const navigate = useNavigate();
+    const [analytics, setAnalytics] = useState(null);
+
+    useEffect(() => {
+        const fetchAnalytics = async () => {
+            try {
+                const res = await api.get('/analytics');
+                setAnalytics(res.data);
+            } catch (err) {
+                console.error("Dashboard Analytics Error", err);
+            }
+        };
+        fetchAnalytics();
+    }, [activeWorkspace]);
+
+    const stats = analytics?.stats || {
+        codeQuality: 0, totalProjects: 0, linesOfCode: 0,
+        aiGenerations: 0, marketplaceInstalls: 0, bugFrequencyRating: 0
+    };
+
+    const STATS_DATA = [
+        { label: 'Code Quality', value: `${stats.codeQuality}%`, icon: HeartPulse, color: 'text-green-400' },
+        { label: 'Lines of Code', value: stats.linesOfCode, icon: Code2, color: 'text-primary-500' },
+        { label: 'Bug Frequency', value: `${stats.bugFrequencyRating}%`, icon: Bug, color: 'text-red-400' },
+        { label: 'AI Assistance', value: stats.aiGenerations, icon: Sparkles, color: 'text-accent-purple' },
+    ];
 
     return (
         <div className="space-y-8">
@@ -31,10 +46,9 @@ export const Dashboard = () => {
                     <h1 className="text-3xl font-display font-bold text-white mb-2">
                         Welcome back, <span className="text-gradient">{user?.name?.split(' ')[0] || 'Developer'}</span>
                     </h1>
-                    <p className="text-gray-400">Here's what's happening in your workspace today.</p>
+                    <p className="text-gray-400">Here's what's happening in <span className="text-primary-400 font-semibold">{activeWorkspace?.name || 'your workspace'}</span> today.</p>
                 </div>
                 <div className="flex gap-2">
-                    {/* Action buttons could go here */}
                 </div>
             </div>
 
@@ -56,34 +70,41 @@ export const Dashboard = () => {
 
             {/* Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Recent Activity */}
-                <AnimatedCard delay={0.4} className="lg:col-span-2">
+                {/* Developer Intelligence Graph */}
+                <AnimatedCard delay={0.4} className="lg:col-span-2 flex flex-col min-h-[350px]">
                     <div className="flex items-center gap-2 mb-6">
                         <Activity className="text-primary-400" size={20} />
-                        <h2 className="text-xl font-semibold text-white">Recent Activity</h2>
+                        <h2 className="text-xl font-semibold text-white">Productivity & AI Velocity</h2>
                     </div>
 
-                    <div className="space-y-4">
-                        {MOCK_ACTIVITY.map((item, i) => (
-                            <motion.div
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.5 + (i * 0.1), duration: 0.5, ease: "easeOut" }}
-                                key={item}
-                                className="flex gap-4 p-4 rounded-xl bg-dark-900/40 border border-white/5 hover:bg-dark-800/80 hover:border-primary-500/30 transition duration-300 group cursor-default relative overflow-hidden"
-                            >
-                                <div className="absolute inset-0 bg-gradient-to-r from-primary-500/0 to-primary-500/5 transform -translate-x-full group-hover:translate-x-0 transition-transform duration-700"></div>
-                                <div className="w-10 h-10 rounded-full bg-primary-500/10 flex items-center justify-center shrink-0 border border-primary-500/20 group-hover:shadow-[0_0_15px_rgba(99,102,241,0.4)] group-hover:bg-primary-500/20 transition duration-300">
-                                    <GitMerge size={16} className="text-primary-400" />
-                                </div>
-                                <div className="relative z-10">
-                                    <p className="text-gray-200 text-sm">
-                                        <span className="font-semibold text-white">You</span> pushed to <span className="text-primary-400 font-medium group-hover:text-accent-blue transition-colors px-1 py-0.5 rounded bg-primary-500/10">main</span> in devsphere/client
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-1.5 font-medium">2 hours ago</p>
-                                </div>
-                            </motion.div>
-                        ))}
+                    <div className="flex-1 w-full relative min-h-[250px]">
+                        {analytics?.activityData ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={analytics.activityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="colorCommits" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                        </linearGradient>
+                                        <linearGradient id="colorAi" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                                    <XAxis dataKey="name" stroke="#ffffff50" fontSize={12} tickLine={false} axisLine={false} />
+                                    <YAxis stroke="#ffffff50" fontSize={12} tickLine={false} axisLine={false} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
+                                        itemStyle={{ color: '#fff' }}
+                                    />
+                                    <Area type="monotone" dataKey="commits" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorCommits)" />
+                                    <Area type="monotone" dataKey="aiCalls" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorAi)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="absolute inset-0 flex items-center justify-center text-gray-500 italic">Aggregating DB models...</div>
+                        )}
                     </div>
                 </AnimatedCard>
 
@@ -91,20 +112,30 @@ export const Dashboard = () => {
                 <AnimatedCard delay={0.5}>
                     <div className="flex items-center gap-2 mb-6">
                         <FolderDot className="text-accent-purple" size={20} />
-                        <h2 className="text-xl font-semibold text-white">Pinned Projects</h2>
+                        <h2 className="text-xl font-semibold text-white">Active Projects</h2>
                     </div>
                     <div className="space-y-3">
-                        {PINNED_PROJECTS.map((p, i) => (
+                        {projects.length === 0 && !loading && (
+                            <div className="p-4 rounded-xl border border-dashed border-white/20 text-center flex flex-col items-center justify-center min-h-[150px]">
+                                <FolderDot className="text-gray-500 mb-2" size={24} />
+                                <p className="text-sm text-gray-400">No projects running yet.<br />Use the Sidebar to create one.</p>
+                            </div>
+                        )}
+                        {projects.slice(0, 5).map((p, i) => (
                             <motion.div
+                                onClick={() => navigate(`/editor/${p._id}`)}
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: 0.7 + (i * 0.1), duration: 0.4 }}
-                                key={i}
+                                key={p._id}
                                 className="group cursor-pointer p-4 rounded-xl border border-white/5 bg-dark-900/40 hover:border-accent-purple/50 hover:bg-dark-800/80 hover:shadow-neon-purple transition duration-300 relative overflow-hidden"
                             >
                                 <div className="absolute right-0 top-0 bottom-0 w-1 bg-accent-purple scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-bottom"></div>
                                 <h3 className="text-gray-200 font-medium group-hover:text-white transition-colors">{p.name}</h3>
-                                <p className="text-xs text-gray-500 mt-1 group-hover:text-accent-purple/70 transition-colors">{p.lang}</p>
+                                <p className="text-xs text-gray-500 mt-1 flex items-center gap-2 group-hover:text-accent-purple/70 transition-colors">
+                                    <span className="w-2 h-2 rounded-full bg-accent-purple/50"></span>
+                                    {p.files?.length || 1} file(s)
+                                </p>
                             </motion.div>
                         ))}
                     </div>

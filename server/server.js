@@ -5,6 +5,14 @@ const http = require("http");
 const { Server } = require("socket.io");
 require("dotenv").config();
 
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
+
 const app = express();
 
 app.use(cors());
@@ -16,7 +24,7 @@ app.get("/", (req, res) => {
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err));
+  .catch(err => console.error("MongoDB Connection Error:", err.message));
 
 const authRoutes = require("./routes/auth");
 app.use("/api/auth", authRoutes);
@@ -32,6 +40,27 @@ app.use("/api/code", codeRoutes);
 
 const aiRoutes = require("./routes/ai");
 app.use("/api/ai", aiRoutes);
+
+const workspaceRoutes = require("./routes/workspaces");
+app.use("/api/workspaces", workspaceRoutes);
+
+const projectRoutes = require("./routes/projects");
+app.use("/api/projects", projectRoutes);
+
+const gitRoutes = require("./routes/git");
+app.use("/api/git", gitRoutes);
+
+const marketplaceRoutes = require("./routes/marketplace");
+app.use("/api/marketplace", marketplaceRoutes);
+
+const analyticsRoutes = require("./routes/analytics");
+app.use("/api/analytics", analyticsRoutes);
+
+// Global Express 5 error handler (must have 4 args)
+app.use((err, req, res, next) => {
+  console.error("Express Error:", err.message);
+  res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -56,10 +85,14 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("chat-update", message);
   });
 
+  socket.on("ai-response", ({ roomId, message }) => {
+    socket.to(roomId).emit("ai-update", message);
+  });
+
   socket.on("disconnect", () => {
-    // Basic leave handling across all rooms
     io.emit("user-left", socket.id);
   });
 });
 
-server.listen(5000, () => console.log("Server running on port 5000"));
+const PORT = process.env.PORT || 5001;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
