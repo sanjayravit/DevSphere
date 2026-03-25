@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-import { io } from 'socket.io-client';
+import socket from '../services/socket';
 import api from '../services/api';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -69,7 +69,6 @@ export const CodeEditorPage = () => {
 
     const editorRef = useRef(null);
     const monacoRef = useRef(null);
-    const socketRef = useRef(null);
     const latestUser = useLatest(user);
 
     // Initial project schema fetching
@@ -101,11 +100,9 @@ export const CodeEditorPage = () => {
     useEffect(() => {
         if (!projectId) return;
 
-        socketRef.current = io(process.env.REACT_APP_SOCKET_URL);
+        socket.emit("join-room", { roomId: projectId, user: latestUser.current || { name: 'Anonymous' } });
 
-        socketRef.current.emit("join-room", { roomId: projectId, user: latestUser.current || { name: 'Anonymous' } });
-
-        socketRef.current.on('code-update', (incomingPayload) => {
+        socket.on('code-update', (incomingPayload) => {
             // Unpack generic updates versus explicitly indexed file broadcasts
             const isLegacy = typeof incomingPayload === 'string';
             const newCode = isLegacy ? incomingPayload : incomingPayload.code;
@@ -123,29 +120,34 @@ export const CodeEditorPage = () => {
             });
         });
 
-        socketRef.current.on('chat-update', (message) => {
+        socket.on('chat-update', (message) => {
             setMessages(prev => [...prev, message]);
         });
 
-        socketRef.current.on('user-joined', ({ socketId, user: joinedUser }) => {
+        socket.on('user-joined', ({ socketId, user: joinedUser }) => {
             setMessages(prev => [...prev, { system: true, text: `${joinedUser?.name || 'A user'} joined the workspace.` }]);
         });
 
-        socketRef.current.on('user-left', (socketId) => {
+        socket.on('user-left', (socketId) => {
             removeCursor(socketId);
         });
 
-        socketRef.current.on('cursor-update', ({ socketId, line, column, user: cursorUser }) => {
+        socket.on('cursor-update', ({ socketId, line, column, user: cursorUser }) => {
             updateCursor(socketId, line, column, cursorUser);
         });
 
-        socketRef.current.on('ai-update', (aiMessage) => {
+        socket.on('ai-update', (aiMessage) => {
             // Check if it's already in history to avoid double local append for the sender
             setAiHistory(prev => [...prev, aiMessage]);
         });
 
         return () => {
-            if (socketRef.current) socketRef.current.disconnect();
+            socket.off('code-update');
+            socket.off('chat-update');
+            socket.off('user-joined');
+            socket.off('user-left');
+            socket.off('cursor-update');
+            socket.off('ai-update');
 
             // Cleanup cursor styles
             const styleTag = document.getElementById('cursor-styles');
@@ -284,7 +286,7 @@ export const CodeEditorPage = () => {
 
     const handleEditorChange = (value) => {
         setCode(value);
-        if (socketRef.current) socketRef.current.emit('code-change', { roomId: projectId, code: { code: value, fileIndex: activeFileIndex } });
+        if (socket) socket.emit('code-change', { roomId: projectId, code: { code: value, fileIndex: activeFileIndex } });
 
         setFiles(prev => {
             const next = [...prev];
@@ -355,8 +357,8 @@ export const CodeEditorPage = () => {
         });
 
         editor.onDidChangeCursorPosition((e) => {
-            if (socketRef.current) {
-                socketRef.current.emit('cursor-change', {
+            if (socket) {
+                socket.emit('cursor-change', {
                     roomId: projectId,
                     cursorData: {
                         line: e.position.lineNumber,
@@ -379,7 +381,7 @@ export const CodeEditorPage = () => {
             timestamp: new Date().toISOString()
         };
 
-        socketRef.current.emit('chat-message', { roomId: projectId, message });
+        socket.emit('chat-message', { roomId: projectId, message });
         setMessages(prev => [...prev, message]);
         setChatInput('');
     };
@@ -418,8 +420,8 @@ export const CodeEditorPage = () => {
         setAiChatInput('');
         const userAiMessage = { role: 'user', content: userMsg };
         setAiHistory(prev => [...prev, userAiMessage]);
-        if (socketRef.current) {
-            socketRef.current.emit('ai-response', { roomId: projectId, message: userAiMessage });
+        if (socket) {
+            socket.emit('ai-response', { roomId: projectId, message: userAiMessage });
         }
         setIsAiLoading(true);
 
@@ -440,14 +442,14 @@ export const CodeEditorPage = () => {
 
             const modelMessage = { role: 'model', content: res.data.result };
             setAiHistory(prev => [...prev, modelMessage]);
-            if (socketRef.current) {
-                socketRef.current.emit('ai-response', { roomId: projectId, message: modelMessage });
+            if (socket) {
+                socket.emit('ai-response', { roomId: projectId, message: modelMessage });
             }
         } catch (err) {
             const errorMessage = { role: 'model', content: `Error: ${err.message}` };
             setAiHistory(prev => [...prev, errorMessage]);
-            if (socketRef.current) {
-                socketRef.current.emit('ai-response', { roomId: projectId, message: errorMessage });
+            if (socket) {
+                socket.emit('ai-response', { roomId: projectId, message: errorMessage });
             }
         } finally {
             setIsAiLoading(false);
@@ -458,8 +460,8 @@ export const CodeEditorPage = () => {
         setIsAiLoading(true);
         const actionStartMsg = { role: 'user', content: `Run AI Action: ${action}` };
         setAiHistory(prev => [...prev, actionStartMsg]);
-        if (socketRef.current) {
-            socketRef.current.emit('ai-response', { roomId: projectId, message: actionStartMsg });
+        if (socket) {
+            socket.emit('ai-response', { roomId: projectId, message: actionStartMsg });
         }
 
         try {
@@ -477,8 +479,8 @@ export const CodeEditorPage = () => {
             if (action === "optimize" || action === "optimise" || action === "refactor" || action === "convert") {
                 if (res.data.result) {
                     setCode(res.data.result);
-                    if (socketRef.current) {
-                        socketRef.current.emit('code-change', { roomId: projectId, code: { code: res.data.result, fileIndex: activeFileIndex } });
+                    if (socket) {
+                        socket.emit('code-change', { roomId: projectId, code: { code: res.data.result, fileIndex: activeFileIndex } });
                     }
                     modelResponse = `Code ${action}ed and applied to the editor successfully.`;
                 } else {
@@ -490,15 +492,15 @@ export const CodeEditorPage = () => {
 
             const actionResultMsg = { role: 'model', content: modelResponse };
             setAiHistory(prev => [...prev, actionResultMsg]);
-            if (socketRef.current) {
-                socketRef.current.emit('ai-response', { roomId: projectId, message: actionResultMsg });
+            if (socket) {
+                socket.emit('ai-response', { roomId: projectId, message: actionResultMsg });
             }
         } catch (err) {
             console.error("AI Error:", err);
             const errorMsg = { role: 'model', content: `Error: ${err.response?.data?.error || err.message}` };
             setAiHistory(prev => [...prev, errorMsg]);
-            if (socketRef.current) {
-                socketRef.current.emit('ai-response', { roomId: projectId, message: errorMsg });
+            if (socket) {
+                socket.emit('ai-response', { roomId: projectId, message: errorMsg });
             }
         } finally {
             setIsAiLoading(false);
@@ -540,8 +542,8 @@ export const CodeEditorPage = () => {
         if (isDefaultCode) {
             const newTemplate = DEFAULT_TEMPLATES[newLang] || DEFAULT_TEMPLATES.javascript;
             setCode(newTemplate);
-            if (socketRef.current) {
-                socketRef.current.emit('code-change', { roomId: projectId, code: { code: newTemplate, fileIndex: activeFileIndex } });
+            if (socket) {
+                socket.emit('code-change', { roomId: projectId, code: { code: newTemplate, fileIndex: activeFileIndex } });
             }
         }
     };
