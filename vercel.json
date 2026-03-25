@@ -1,3 +1,13 @@
 {
-    "outputDirectory": "client/build"
+    "outputDirectory": "client/build",
+    "rewrites": [
+        {
+            "source": "/api/:path*",
+            "destination": "https://devsphere-uh2m.onrender.com/api/:path*"
+        },
+        {
+            "source": "/socket.io/:path*",
+            "destination": "https://devsphere-uh2m.onrender.com/socket.io/:path*"
+        }
+    ]
 }
