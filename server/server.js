@@ -16,7 +16,7 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 
 app.use(cors({
-  origin: "https://dev-sphere-sj.vercel.app",
+  origin: ["https://devsphere-sj.vercel.app", "https://dev-sphere-sj.vercel.app", "http://localhost:3000"],
   credentials: true
 }));
 app.use(express.json());
@@ -68,7 +68,7 @@ app.use((err, req, res, next) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "https://dev-sphere-sj.vercel.app",
+    origin: ["https://devsphere-sj.vercel.app", "https://dev-sphere-sj.vercel.app", "http://localhost:3000"],
     methods: ["GET", "POST"]
   }
 });
