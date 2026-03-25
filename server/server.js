@@ -16,13 +16,21 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 
 app.use(cors({
-  origin: ["https://devsphere-sj.vercel.app", "https://dev-sphere-sj.vercel.app", "http://localhost:3000"],
+  origin: true,
   credentials: true
 }));
 app.use(express.json());
 
 app.get("/", (req, res) => {
   res.send("DevSphere API Running");
+});
+app.get("/api/health", (req, res) => {
+  console.log("Health Check Headers:", req.headers);
+  res.json({
+    status: "healthy",
+    headers: req.headers,
+    mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+  });
 });
 
 mongoose.connect(process.env.MONGO_URI)

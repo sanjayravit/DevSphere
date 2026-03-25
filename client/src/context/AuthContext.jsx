@@ -36,10 +36,16 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const login = async (email, password) => {
-        const res = await api.post('/auth/login', { email, password });
-        localStorage.setItem('token', res.data.token);
-        setUser(jwtDecode(res.data.token));
-        return res.data;
+        try {
+            const res = await api.post('/auth/login', { email, password });
+            localStorage.setItem('token', res.data.token);
+            setUser(jwtDecode(res.data.token));
+            return res.data;
+        } catch (err) {
+            console.error("DEBUG: Login full error:", err);
+            console.log("DEBUG: Login response data:", err.response?.data);
+            throw err;
+        }
     };
 
     const setAuthToken = async (token) => {
@@ -55,10 +61,16 @@ export const AuthProvider = ({ children }) => {
     };
 
     const register = async (name, email, password) => {
-        const res = await api.post('/auth/register', { name, email, password });
-        localStorage.setItem('token', res.data.token);
-        setUser(jwtDecode(res.data.token));
-        return res.data;
+        try {
+            const res = await api.post('/auth/register', { name, email, password });
+            localStorage.setItem('token', res.data.token);
+            setUser(jwtDecode(res.data.token));
+            return res.data;
+        } catch (err) {
+            console.error("DEBUG: Register full error:", err);
+            console.log("DEBUG: Register response data:", err.response?.data);
+            throw err;
+        }
     };
 
     const logout = () => {
