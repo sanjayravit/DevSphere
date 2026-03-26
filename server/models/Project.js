@@ -1,4 +1,4 @@
-const { db } = require("../config/firebase");
+const { db } = require("../firebaseAdmin");
 
 const getCol = () => db ? db.collection("projects") : null;
 

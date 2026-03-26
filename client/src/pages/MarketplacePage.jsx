@@ -42,7 +42,7 @@ export const MarketplacePage = () => {
 
         setInstallingId(id);
         try {
-            await api.post(`/marketplace/${id}/install`, { projectId: activeProject?._id });
+            await api.post(`/marketplace/${id}/install`, { projectId: activeProject?.id });
             alert("Successfully installed into your active project workspace.");
             fetchItems(); // refresh downloads count
         } catch (err) {
@@ -80,7 +80,7 @@ export const MarketplacePage = () => {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {items.map((item, idx) => (
-                        <AnimatedCard key={item._id} delay={idx * 0.1} className="bg-dark-800/80 border border-white/5 p-6 flex flex-col items-start hover:border-white/10 transition-colors">
+                        <AnimatedCard key={item.id} delay={idx * 0.1} className="bg-dark-800/80 border border-white/5 p-6 flex flex-col items-start hover:border-white/10 transition-colors">
                             <div className="w-12 h-12 rounded-xl bg-dark-900 border border-white/5 flex flex-col items-center justify-center mb-6 shadow-xl">
                                 {getIcon(item.type)}
                             </div>
@@ -105,8 +105,8 @@ export const MarketplacePage = () => {
                                 </div>
                                 <Button
                                     size="sm"
-                                    onClick={() => handleInstall(item._id)}
-                                    isLoading={installingId === item._id}
+                                    onClick={() => handleInstall(item.id)}
+                                    isLoading={installingId === item.id}
                                     className="gap-2 px-4 shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)] min-w-[100px]"
                                 >
                                     <Download size={14} /> Install

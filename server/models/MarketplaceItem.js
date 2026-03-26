@@ -1,4 +1,4 @@
-const { db } = require("../config/firebase");
+const { admin, db } = require("../firebaseAdmin");
 
 const getCol = () => db ? db.collection("marketplace_items") : null;
 
@@ -34,7 +34,6 @@ module.exports = {
     incrementDownloads: async (id) => {
         const col = getCol();
         if (!col) throw new Error("Database not initialized");
-        const admin = require('firebase-admin');
         await col.doc(id).update({
             downloads: admin.firestore.FieldValue.increment(1)
         });

@@ -32,9 +32,9 @@ export const WorkspaceProvider = ({ children }) => {
             if (res.data.length > 0) {
                 // Determine user memory or default to first workspace
                 const savedId = localStorage.getItem('devsphere-active-workspace');
-                const target = savedId ? res.data.find(w => w._id === savedId) || res.data[0] : res.data[0];
+                const target = savedId ? res.data.find(w => w.id === savedId) || res.data[0] : res.data[0];
                 setActiveWorkspace(target);
-                await fetchProjects(target._id);
+                await fetchProjects(target.id);
             } else {
                 setLoading(false);
             }
@@ -57,8 +57,8 @@ export const WorkspaceProvider = ({ children }) => {
 
     const changeWorkspace = (workspace) => {
         setActiveWorkspace(workspace);
-        localStorage.setItem('devsphere-active-workspace', workspace._id);
-        fetchProjects(workspace._id);
+        localStorage.setItem('devsphere-active-workspace', workspace.id);
+        fetchProjects(workspace.id);
     };
 
     const createWorkspace = async (name) => {
@@ -70,7 +70,7 @@ export const WorkspaceProvider = ({ children }) => {
 
     const createProject = async (name, language = 'javascript') => {
         if (!activeWorkspace) throw new Error("No active workspace");
-        const res = await api.post(`/projects/${activeWorkspace._id}`, { name, language });
+        const res = await api.post(`/projects/${activeWorkspace.id}`, { name, language });
         setProjects([...projects, res.data]);
         return res.data;
     };
@@ -84,7 +84,7 @@ export const WorkspaceProvider = ({ children }) => {
             changeWorkspace,
             createWorkspace,
             createProject,
-            refreshProjects: () => activeWorkspace && fetchProjects(activeWorkspace._id)
+            refreshProjects: () => activeWorkspace && fetchProjects(activeWorkspace.id)
         }}>
             {children}
         </WorkspaceContext.Provider>

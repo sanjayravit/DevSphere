@@ -64,7 +64,7 @@ export const Sidebar = () => {
             const project = await createProject(newProjectName, newProjectLanguage);
             setCreateProjectModalOpen(false);
             setNewProjectName("");
-            if (project) navigate(`/editor/${project._id}`);
+            if (project) navigate(`/editor/${project.id}`);
         }
     };
 
@@ -102,9 +102,9 @@ export const Sidebar = () => {
                     <div className="absolute top-full left-0 w-full mt-2 bg-dark-800 border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
                         {workspaces.map(w => (
                             <button
-                                key={w._id}
+                                key={w.id}
                                 onClick={() => { changeWorkspace(w); setWorkspaceDropdownOpen(false); }}
-                                className={`w-full text-left p-3 text-sm hover:bg-white/5 transition-colors ${w._id === activeWorkspace?._id ? 'text-primary-400 bg-primary-500/5' : 'text-gray-300'}`}
+                                className={`w-full text-left p-3 text-sm hover:bg-white/5 transition-colors ${w.id === activeWorkspace?.id ? 'text-primary-400 bg-primary-500/5' : 'text-gray-300'}`}
                             >
                                 {w.name}
                             </button>
@@ -138,7 +138,7 @@ export const Sidebar = () => {
             </div>
             <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar mb-6 min-h-[100px]">
                 {projects.map(p => (
-                    <NavItem key={p._id} to={`/editor/${p._id}`} icon={FolderDot} label={p.name} />
+                    <NavItem key={p.id} to={`/editor/${p.id}`} icon={FolderDot} label={p.name} />
                 ))}
                 {projects.length === 0 && (
                     <div className="text-sm text-gray-600 px-4 py-2 italic text-center mt-4">No projects yet</div>

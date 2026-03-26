@@ -5,7 +5,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const auth = require("../middleware/auth");
 const axios = require('axios');
-const { db } = require("../config/firebase");
+const { admin, db } = require("../firebaseAdmin");
 
 // Register
 router.post("/register", async (req, res) => {
@@ -140,6 +140,38 @@ router.get('/github/callback', async (req, res) => {
     console.error("OAuth Error:", err.message);
     const frontendUrl = req.headers.origin || "https://devsphere-sj.vercel.app";
     res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+  }
+});
+
+
+// Firebase Auth Sync
+router.post("/firebase-sync", async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { uid, email, name, picture } = decodedToken;
+
+    let user = await User.findById(uid);
+    if (!user) {
+      // Create user if not exists, use uid as document ID
+      const col = db.collection("users");
+      await col.doc(uid).set({
+        username: name || email.split('@')[0],
+        email: email,
+        name: name || '',
+        avatar: picture || '',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      user = { id: uid, email, name };
+    }
+
+    const payload = { user: { id: uid } };
+    const token = jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' });
+    res.json({ token, user });
+  } catch (err) {
+    console.error("Firebase Sync Error:", err.message);
+    res.status(401).json({ error: "Invalid Firebase token" });
   }
 });
 

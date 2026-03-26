@@ -172,7 +172,7 @@ export const SocialFeedPage = () => {
         try {
             const res = await api.patch(`/posts/${postId}/like`);
             setPosts(prev => prev.map(p =>
-                p._id === postId ? { ...p, likes: res.data.likes } : p
+                p.id === postId ? { ...p, likes: res.data.likes } : p
             ));
         } catch (err) {
             console.error("Like error", err);
@@ -334,7 +334,7 @@ export const SocialFeedPage = () => {
                     <AnimatePresence mode="popLayout">
                         {posts.map((post, i) => (
                             <motion.div
-                                key={post._id || i}
+                                key={post.id || i}
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, scale: 0.95 }}
@@ -391,17 +391,17 @@ export const SocialFeedPage = () => {
 
                                     <div className="flex items-center gap-8 text-sm text-gray-400 border-t border-white/5 mt-8 pt-6 transition-colors">
                                         <button
-                                            onClick={() => handleLike(post._id)}
-                                            className={`flex items-center gap-2 group/btn transition-all duration-300 ${post.likes?.includes(user?._id || user?.id)
+                                            onClick={() => handleLike(post.id)}
+                                            className={`flex items-center gap-2 group/btn transition-all duration-300 ${post.likes?.includes(user?.id || user?.id)
                                                 ? 'text-red-400'
                                                 : 'text-gray-500 hover:text-red-400'
                                                 }`}
                                         >
-                                            <div className={`p-2 rounded-xl group-hover/btn:bg-red-400/10 transition-colors ${post.likes?.includes(user?._id || user?.id) ? 'bg-red-400/10' : ''
+                                            <div className={`p-2 rounded-xl group-hover/btn:bg-red-400/10 transition-colors ${post.likes?.includes(user?.id || user?.id) ? 'bg-red-400/10' : ''
                                                 }`}>
                                                 <Heart
                                                     size={22}
-                                                    className={`transition-all duration-300 ${post.likes?.includes(user?._id || user?.id)
+                                                    className={`transition-all duration-300 ${post.likes?.includes(user?.id || user?.id)
                                                         ? 'fill-current scale-110'
                                                         : 'group-hover/btn:scale-125'
                                                         }`}

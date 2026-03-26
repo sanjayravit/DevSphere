@@ -123,11 +123,11 @@ export const Dashboard = () => {
                         )}
                         {projects.slice(0, 5).map((p, i) => (
                             <motion.div
-                                onClick={() => navigate(`/editor/${p._id}`)}
+                                onClick={() => navigate(`/editor/${p.id}`)}
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: 0.7 + (i * 0.1), duration: 0.4 }}
-                                key={p._id}
+                                key={p.id}
                                 className="group cursor-pointer p-4 rounded-xl border border-white/5 bg-dark-900/40 hover:border-accent-purple/50 hover:bg-dark-800/80 hover:shadow-neon-purple transition duration-300 relative overflow-hidden"
                             >
                                 <div className="absolute right-0 top-0 bottom-0 w-1 bg-accent-purple scale-y-0 group-hover:scale-y-100 transition-transform duration-300 origin-bottom"></div>

@@ -1,6 +1,12 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import api from '../services/api';
 import { jwtDecode } from 'jwt-decode';
+import { auth, googleProvider, githubProvider } from '../firebase';
+import {
+    signInWithPopup,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged
+} from 'firebase/auth';
 
 const AuthContext = createContext();
 
@@ -11,75 +17,95 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const loadUser = async () => {
-            const token = localStorage.getItem('token');
-            if (token) {
+        const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+            if (fbUser) {
+                const idToken = await fbUser.getIdToken();
                 try {
-                    // Verify token format
-                    const decoded = jwtDecode(token);
-                    // If we want to fetch the real user profile:
-                    const res = await api.get('/auth/me').catch(() => null);
-                    if (res && res.data) {
-                        setUser(res.data);
-                    } else {
-                        setUser(decoded);
-                    }
+                    const res = await api.post('/auth/firebase-sync', { idToken });
+                    localStorage.setItem('token', res.data.token);
+                    setUser(res.data.user);
                 } catch (err) {
-                    console.error("Invalid token", err);
-                    localStorage.removeItem('token');
+                    console.error("Firebase sync error", err);
+                    setUser(fbUser); // Fallback
                 }
+            } else {
+                setUser(null);
+                localStorage.removeItem('token');
             }
             setLoading(false);
-        };
+        });
 
-        loadUser();
+        return () => unsubscribe();
     }, []);
 
     const login = async (email, password) => {
         try {
-            const res = await api.post('/auth/login', { email, password });
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const idToken = await userCredential.user.getIdToken();
+            const res = await api.post('/auth/firebase-sync', { idToken });
             localStorage.setItem('token', res.data.token);
-            setUser(jwtDecode(res.data.token));
+            setUser(res.data.user);
             return res.data;
         } catch (err) {
-            console.error("DEBUG: Login full error:", err);
-            console.log("DEBUG: Login response data:", err.response?.data);
+            console.error("Login error", err);
             throw err;
         }
     };
 
-    const setAuthToken = async (token) => {
-        localStorage.setItem('token', token);
+    const loginWithGoogle = async () => {
         try {
-            const decoded = jwtDecode(token);
-            const res = await api.get('/auth/me').catch(() => null);
-            setUser(res?.data || decoded);
+            const result = await signInWithPopup(auth, googleProvider);
+            const idToken = await result.user.getIdToken();
+            const res = await api.post('/auth/firebase-sync', { idToken });
+            localStorage.setItem('token', res.data.token);
+            setUser(res.data.user);
+            return res.data;
         } catch (err) {
-            console.error("Set token error", err);
-            setUser(jwtDecode(token));
+            console.error("Google Login error", err);
+            throw err;
+        }
+    };
+
+    const loginWithGithub = async () => {
+        try {
+            const result = await signInWithPopup(auth, githubProvider);
+            const idToken = await result.user.getIdToken();
+            const res = await api.post('/auth/firebase-sync', { idToken });
+            localStorage.setItem('token', res.data.token);
+            setUser(res.data.user);
+            return res.data;
+        } catch (err) {
+            console.error("Github Login error", err);
+            throw err;
         }
     };
 
     const register = async (name, email, password) => {
         try {
-            const res = await api.post('/auth/register', { name, email, password });
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const idToken = await userCredential.user.getIdToken();
+            const res = await api.post('/auth/firebase-sync', { idToken, name });
             localStorage.setItem('token', res.data.token);
-            setUser(jwtDecode(res.data.token));
+            setUser(res.data.user);
             return res.data;
         } catch (err) {
-            console.error("DEBUG: Register full error:", err);
-            console.log("DEBUG: Register response data:", err.response?.data);
+            console.error("Register error", err);
             throw err;
         }
     };
 
-    const logout = () => {
-        localStorage.removeItem('token');
-        setUser(null);
-    };
+    const logout = () => signOut(auth);
 
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, setAuthToken, loading }}>
+        <AuthContext.Provider value={{
+            user,
+            login,
+            register,
+            logout,
+            loginWithGoogle,
+            loginWithGithub,
+            loading
+        }}>
             {!loading && children}
         </AuthContext.Provider>
     );
