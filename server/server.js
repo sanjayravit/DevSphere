@@ -30,9 +30,14 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.error("MongoDB Connection Error:", err.message));
+const MONGODB_URI = process.env.MONGO_URI;
+if (MONGODB_URI) {
+  mongoose.connect(MONGODB_URI)
+    .then(() => console.log("MongoDB Connected"))
+    .catch(err => console.error("MongoDB Connection Error:", err.message));
+} else {
+  console.warn("WARNING: MONGO_URI is not defined.");
+}
 
 // Routes
 app.use("/api/auth", require("./routes/auth"));
@@ -52,7 +57,10 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
 });
 
-const PORT = process.env.PORT || 5050;
-app.listen(PORT, () => console.log(`API Server running on port ${PORT}`));
+// Conditionally listen if not running in Vercel Serverless environment
+if (process.env.NODE_ENV !== 'production' || process.env.RENDER) {
+  const PORT = process.env.PORT || 5050;
+  app.listen(PORT, () => console.log(`API Server running on port ${PORT}`));
+}
 
 module.exports = app; // For Vercel serverless
