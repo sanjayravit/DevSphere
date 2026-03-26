@@ -120,12 +120,14 @@ router.get('/github/callback', async (req, res) => {
     const payload = { user: { id: user.id } };
     jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' }, (err, token) => {
       if (err) throw err;
-      res.redirect(`https://devsphere-sj.vercel.app/login?token=${token}`);
+      const frontendUrl = req.headers.origin || "https://devsphere-sj.vercel.app";
+      res.redirect(`${frontendUrl}/login?token=${token}`);
     });
 
   } catch (err) {
     console.error("OAuth Error:", err.message);
-    res.redirect('https://devsphere-sj.vercel.app/login?error=oauth_failed');
+    const frontendUrl = req.headers.origin || "https://devsphere-sj.vercel.app";
+    res.redirect(`${frontendUrl}/login?error=oauth_failed`);
   }
 });
 

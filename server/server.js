@@ -14,7 +14,7 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 
 app.use(cors({
-  origin: ["https://devsphere-sj.vercel.app", "https://dev-sphere-sj.vercel.app", "http://localhost:3000"],
+  origin: [/https:\/\/.*\.vercel\.app$/, "https://devsphere-sj.vercel.app", "https://dev-sphere-sj.vercel.app", "http://localhost:3000"],
   credentials: true
 }));
 app.use(express.json());
@@ -52,7 +52,7 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
 });
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5050;
 app.listen(PORT, () => console.log(`API Server running on port ${PORT}`));
 
 module.exports = app; // For Vercel serverless
