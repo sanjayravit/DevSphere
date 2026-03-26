@@ -107,10 +107,12 @@ router.post("/copilot", auth, async (req, res) => {
             project = await Project.findById(projectId);
             if (!project) return res.status(404).json({ error: "Project not found" });
 
-            const workspace = await Workspace.findOne({ _id: project.workspaceId, members: req.user.id });
-            if (!workspace) return res.status(401).json({ error: "Unauthorized access to this workspace project" });
+            const workspace = await Workspace.findById(project.workspaceId);
+            if (!workspace || !workspace.members.includes(req.user.id)) {
+                return res.status(401).json({ error: "Unauthorized access to this workspace project" });
+            }
 
-            history = project.chatHistory.map(msg => ({
+            history = (project.chatHistory || []).map(msg => ({
                 role: msg.role === 'user' ? 'user' : 'model',
                 parts: [{ text: msg.content }]
             }));
@@ -148,18 +150,19 @@ router.post("/copilot", auth, async (req, res) => {
         const chat = model.startChat({ history });
 
         const result = await chat.sendMessage([{ text: finalPrompt }]);
-        const text = result.response.text();
+        const responseText = result.response.text();
 
         // Record backend interaction layer in the DB memory arrays
         if (project) {
-            project.chatHistory.push(
-                { role: 'user', content: finalPrompt },
-                { role: 'model', content: text }
+            const chatHistory = project.chatHistory || [];
+            chatHistory.push(
+                { role: 'user', content: finalPrompt, timestamp: new Date() },
+                { role: 'model', content: responseText, timestamp: new Date() }
             );
-            await project.save();
+            await Project.save(projectId, { ...project, chatHistory });
         }
 
-        res.json({ result: text });
+        res.json({ result: responseText });
     } catch (error) {
         console.error("Copilot AI Error:", error);
         res.status(500).json({ error: "Failed to generate AI response. Check your API key." });

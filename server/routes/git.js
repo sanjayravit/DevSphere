@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require("../middleware/auth");
 const gitService = require("../services/gitService");
 const Project = require("../models/Project");
+const User = require("../models/user");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key");
@@ -22,7 +23,6 @@ router.get("/:projectId/history", auth, async (req, res) => {
 router.post("/:projectId/commit", auth, async (req, res) => {
     const { message } = req.body;
     try {
-        const User = require("../models/user");
         const user = await User.findById(req.user.id);
         const authorName = user ? user.username : 'Developer';
 
@@ -46,11 +46,12 @@ router.post("/:projectId/commit", auth, async (req, res) => {
                 aiReview = aiResult.response.text();
 
                 // Save AI Review back to Chat History
-                project.chatHistory.push(
-                    { role: 'user', content: `[SYSTEM_COMMIT_HOOK] Execute Code Review on latest commit.` },
-                    { role: 'model', content: `**Code Review (${commitResult.commitId || 'latest'}):**\n${aiReview}` }
+                const chatHistory = project.chatHistory || [];
+                chatHistory.push(
+                    { role: 'user', content: `[SYSTEM_COMMIT_HOOK] Execute Code Review on latest commit.`, timestamp: new Date() },
+                    { role: 'model', content: `**Code Review (${commitResult.commitId || 'latest'}):**\n${aiReview}`, timestamp: new Date() }
                 );
-                await project.save();
+                await Project.save(req.params.projectId, { ...project, chatHistory });
             } catch (aiErr) {
                 console.error("AI Review Error:", aiErr);
                 aiReview = "AI Code Review failed due to LLM error.";
@@ -65,3 +66,4 @@ router.post("/:projectId/commit", auth, async (req, res) => {
 });
 
 module.exports = router;
+

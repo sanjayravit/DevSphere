@@ -10,8 +10,10 @@ router.post("/:workspaceId", auth, async (req, res) => {
         const { name, language } = req.body;
         const workspaceId = req.params.workspaceId;
 
-        const workspace = await Workspace.findOne({ _id: workspaceId, members: req.user.id });
-        if (!workspace) return res.status(404).json({ msg: "Workspace not found or unauthorized" });
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace || !workspace.members.includes(req.user.id)) {
+            return res.status(404).json({ msg: "Workspace not found or unauthorized" });
+        }
 
         // Add default main file extension mapping based on request language
         let fileExt = "js";
@@ -20,13 +22,13 @@ router.post("/:workspaceId", auth, async (req, res) => {
         if (language === "c") fileExt = "c";
         if (language === "cpp") fileExt = "cpp";
 
-        const project = new Project({
+        const project = await Project.create({
             name,
             workspaceId,
-            files: [{ name: `main.${fileExt}`, content: "// Welcome to your new startup project\n", language: language || "javascript" }]
+            files: [{ name: `main.${fileExt}`, content: "// Welcome to your new startup project\n", language: language || "javascript" }],
+            chatHistory: []
         });
 
-        await project.save();
         res.json(project);
     } catch (err) {
         console.error("Error creating project:", err);
@@ -39,11 +41,19 @@ router.get("/workspace/:workspaceId", auth, async (req, res) => {
     try {
         const workspaceId = req.params.workspaceId;
 
-        const workspace = await Workspace.findOne({ _id: workspaceId, members: req.user.id });
-        if (!workspace) return res.status(404).json({ msg: "Workspace not found or unauthorized" });
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace || !workspace.members.includes(req.user.id)) {
+            return res.status(404).json({ msg: "Workspace not found or unauthorized" });
+        }
 
-        const projects = await Project.find({ workspaceId }).select("-chatHistory -files.content"); // Exclude heavy payloads
-        res.json(projects);
+        const projects = await Project.findByWorkspace(workspaceId);
+        // Transform to exclude heavy items for overview if needed, but Firestore returns what you ask for.
+        // For simplicity, we'll return the full list or map it if we want to save bandwidth.
+        const summary = projects.map(p => {
+            const { chatHistory, files, ...rest } = p;
+            return rest;
+        });
+        res.json(summary);
     } catch (err) {
         console.error(err.message);
         res.status(500).send("Server Error");
@@ -56,8 +66,10 @@ router.get("/:projectId", auth, async (req, res) => {
         const project = await Project.findById(req.params.projectId);
         if (!project) return res.status(404).json({ msg: "Project not found" });
 
-        const workspace = await Workspace.findOne({ _id: project.workspaceId, members: req.user.id });
-        if (!workspace) return res.status(401).json({ msg: "Unauthorized" });
+        const workspace = await Workspace.findById(project.workspaceId);
+        if (!workspace || !workspace.members.includes(req.user.id)) {
+            return res.status(401).json({ msg: "Unauthorized" });
+        }
 
         res.json(project);
     } catch (err) {
@@ -74,13 +86,14 @@ router.put("/:projectId/files", auth, async (req, res) => {
 
         if (!project) return res.status(404).json({ msg: "Project not found" });
 
-        const workspace = await Workspace.findOne({ _id: project.workspaceId, members: req.user.id });
-        if (!workspace) return res.status(401).json({ msg: "Unauthorized" });
+        const workspace = await Workspace.findById(project.workspaceId);
+        if (!workspace || !workspace.members.includes(req.user.id)) {
+            return res.status(401).json({ msg: "Unauthorized" });
+        }
 
-        project.files = files;
-        await project.save();
+        const updatedProject = await Project.save(req.params.projectId, { ...project, files });
 
-        res.json(project);
+        res.json(updatedProject);
     } catch (err) {
         console.error(err.message);
         res.status(500).send("Server Error");
@@ -88,3 +101,4 @@ router.put("/:projectId/files", auth, async (req, res) => {
 });
 
 module.exports = router;
+

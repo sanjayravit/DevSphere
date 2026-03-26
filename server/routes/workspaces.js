@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const auth = require("../middleware/auth");
 const Workspace = require("../models/Workspace");
+const User = require("../models/user");
 
 // Create Workspace
 router.post("/", auth, async (req, res) => {
@@ -9,13 +10,12 @@ router.post("/", auth, async (req, res) => {
         const { name } = req.body;
         if (!name) return res.status(400).json({ msg: "Workspace name is required" });
 
-        const workspace = new Workspace({
+        const workspace = await Workspace.create({
             name,
             owner: req.user.id,
             members: [req.user.id]
         });
 
-        await workspace.save();
         res.json(workspace);
     } catch (err) {
         console.error(err.message);
@@ -26,10 +26,18 @@ router.post("/", auth, async (req, res) => {
 // Get User Workspaces
 router.get("/", auth, async (req, res) => {
     try {
-        const workspaces = await Workspace.find({
-            members: req.user.id
-        }).populate("owner", "username email");
-        res.json(workspaces);
+        const workspaces = await Workspace.findByMember(req.user.id);
+
+        // Manual "populate" for owner
+        const populatedWorkspaces = await Promise.all(workspaces.map(async w => {
+            const owner = await User.findById(w.owner);
+            return {
+                ...w,
+                owner: owner ? { id: owner.id, username: owner.username, email: owner.email } : w.owner
+            };
+        }));
+
+        res.json(populatedWorkspaces);
     } catch (err) {
         console.error(err.message);
         res.status(500).send("Server Error");
@@ -37,3 +45,4 @@ router.get("/", auth, async (req, res) => {
 });
 
 module.exports = router;
+

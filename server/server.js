@@ -1,7 +1,7 @@
 const express = require("express");
-const mongoose = require("mongoose");
 const cors = require("cors");
 require("dotenv").config();
+const { db } = require("./config/firebase");
 
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION:', err.message);
@@ -20,26 +20,25 @@ app.use(cors({
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.send("DevSphere API Running");
+  res.send("DevSphere API Running on Firebase");
 });
 
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    hasMongoUri: !!process.env.MONGO_URI,
-    envVarsLoaded: Object.keys(process.env).length
-  });
+app.get("/api/health", async (req, res) => {
+  try {
+    // Simple Firestore check
+    await db.collection('health_check').doc('status').set({ lastCheck: new Date() });
+    res.json({
+      status: "healthy",
+      database: "firestore",
+      envVarsLoaded: Object.keys(process.env).length
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: "unhealthy",
+      error: err.message
+    });
+  }
 });
-
-const MONGODB_URI = process.env.MONGO_URI;
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log("MongoDB Connected"))
-    .catch(err => console.error("MongoDB Connection Error:", err.message));
-} else {
-  console.warn("WARNING: MONGO_URI is not defined.");
-}
 
 // Routes
 app.use("/api/auth", require("./routes/auth"));
@@ -66,3 +65,4 @@ if (process.env.NODE_ENV !== 'production' || process.env.RENDER) {
 }
 
 module.exports = app; // For Vercel serverless
+

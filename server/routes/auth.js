@@ -9,23 +9,27 @@ const axios = require('axios');
 // Register
 router.post("/register", async (req, res) => {
   try {
-    const hashed = await bcrypt.hash(req.body.password, 10);
+    const { email, password, username, name } = req.body;
 
-    const user = new User({
-      username: req.body.username || req.body.name,
-      email: req.body.email,
+    // Check for existing user
+    const existing = await User.findByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: "An account with this email already exists.", code: "DUPLICATE_EMAIL" });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      username: username || name,
+      email: email,
       password: hashed
     });
 
-    await user.save();
-    const payload = { user: { id: user._id } };
+    const payload = { user: { id: user.id } };
     const token = jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' });
     res.json({ token });
   } catch (err) {
     console.error(err);
-    if (err.code === 11000) {
-      return res.status(409).json({ error: "An account with this email already exists.", code: "DUPLICATE_EMAIL" });
-    }
     res.status(500).json({ error: "Registration failed. Please try again.", details: err.message, code: "REGISTRATION_ERROR" });
   }
 });
@@ -33,14 +37,14 @@ router.post("/register", async (req, res) => {
 // Login
 router.post("/login", async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email });
+    const user = await User.findByEmail(req.body.email);
 
     if (!user) return res.status(404).json({ error: "No account found with this email.", code: "USER_NOT_FOUND" });
 
     const valid = await bcrypt.compare(req.body.password, user.password);
     if (!valid) return res.status(401).json({ error: "Incorrect password. Please try again.", code: "WRONG_PASSWORD" });
 
-    const payload = { user: { id: user._id } };
+    const payload = { user: { id: user.id } };
     const token = jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' });
     res.json({ token });
   } catch (err) {
@@ -51,7 +55,8 @@ router.post("/login", async (req, res) => {
 
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user.id);
+    if (user) delete user.password;
     res.json(user);
   } catch (err) {
     console.error(err.message);
@@ -100,21 +105,21 @@ router.get('/github/callback', async (req, res) => {
     const userData = userRes.data;
 
     // Check DB for matching email
-    let user = await User.findOne({ email: primaryEmail });
+    let user = await User.findByEmail(primaryEmail);
     if (!user) {
-      user = new User({
+      user = await User.create({
         username: userData.login,
         name: userData.name || userData.login,
         email: primaryEmail,
         avatar: userData.avatar_url,
         password: 'github_oauth_dummy_' + Date.now() + Math.random(),
       });
-      await user.save();
     } else {
       // Update avatar if it changed
-      user.avatar = userData.avatar_url;
-      user.username = user.username || userData.login;
-      await user.save();
+      await User.update(user.id, {
+        avatar: userData.avatar_url,
+        username: user.username || userData.login
+      });
     }
 
     const payload = { user: { id: user.id } };

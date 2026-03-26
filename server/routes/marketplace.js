@@ -8,8 +8,8 @@ const Project = require("../models/Project");
 router.get("/", async (req, res) => {
     try {
         // Find top marketplace items
-        const items = await MarketplaceItem.find().sort({ downloads: -1 }).limit(50);
-        res.json(items);
+        const items = await MarketplaceItem.findAll();
+        res.json(items.slice(0, 50));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Server Error" });
@@ -19,7 +19,7 @@ router.get("/", async (req, res) => {
 // POST /api/marketplace/seed (Development Only Shortcut)
 router.post("/seed", async (req, res) => {
     try {
-        const count = await MarketplaceItem.countDocuments();
+        const count = await MarketplaceItem.count();
         if (count === 0) {
             await MarketplaceItem.insertMany([
                 {
@@ -28,7 +28,8 @@ router.post("/seed", async (req, res) => {
                     type: "template",
                     authorName: "DevSphere Core Team",
                     tags: ["react", "security"],
-                    files: [{ name: "Auth.jsx", content: "export default function Auth() { return <div>Secure</div> }", language: "javascript" }]
+                    files: [{ name: "Auth.jsx", content: "export default function Auth() { return <div>Secure</div> }", language: "javascript" }],
+                    downloads: 0
                 },
                 {
                     title: "Next-Gen Refactor Prompt",
@@ -36,12 +37,14 @@ router.post("/seed", async (req, res) => {
                     type: "prompt",
                     authorName: "Vercel Enthusiast",
                     tags: ["ai", "performance"],
-                    promptString: "Analyze this React code. Remove all unnecessary useEffect hooks. Replace prop drilling with Context or Zustand closures. Force memoization on large map lists."
+                    promptString: "Analyze this React code. Remove all unnecessary useEffect hooks. Replace prop drilling with Context or Zustand closures. Force memoization on large map lists.",
+                    downloads: 0
                 }
             ]);
         }
         res.json({ success: true });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: "Seeding failed." });
     }
 });
@@ -54,25 +57,28 @@ router.post("/:id/install", auth, async (req, res) => {
         const item = await MarketplaceItem.findById(req.params.id);
         if (!item) return res.status(404).json({ error: "Item not found" });
 
-        item.downloads += 1;
-        await item.save();
+        await MarketplaceItem.incrementDownloads(req.params.id);
 
         if (projectId) {
             const project = await Project.findById(projectId);
             if (!project) return res.status(404).json({ error: "Target project not found" });
 
             if (item.type === 'template' || item.type === 'snippet') {
+                const files = project.files || [];
                 item.files.forEach(f => {
-                    project.files.push({ name: f.name, content: f.content, language: f.language });
+                    files.push({ name: f.name, content: f.content, language: f.language });
                 });
+                await Project.save(projectId, { ...project, files });
             } else if (item.type === 'prompt') {
-                project.chatHistory.push(
-                    { role: 'user', content: "[Installed Marketplace Prompt]" },
-                    { role: 'model', content: `**System Prompt Configured:**\n${item.promptString}\n\n*You can now ask questions relying on this system prompt bounds.*` }
+                const chatHistory = project.chatHistory || [];
+                chatHistory.push(
+                    { role: 'user', content: "[Installed Marketplace Prompt]", timestamp: new Date() },
+                    { role: 'model', content: `**System Prompt Configured:**\n${item.promptString}\n\n*You can now ask questions relying on this system prompt bounds.*`, timestamp: new Date() }
                 );
+                await Project.save(projectId, { ...project, chatHistory });
             }
-            await project.save();
-            return res.json({ success: true, message: "Installed successfully into project.", project });
+            const updatedProject = await Project.findById(projectId);
+            return res.json({ success: true, message: "Installed successfully into project.", project: updatedProject });
         }
 
         res.json({ success: true, message: "Downloaded but not attached to an active project." });
@@ -83,3 +89,4 @@ router.post("/:id/install", auth, async (req, res) => {
 });
 
 module.exports = router;
+

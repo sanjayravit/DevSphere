@@ -1,24 +1,21 @@
-const mongoose = require("mongoose");
+const { db } = require("../config/firebase");
 
-const WorkspaceSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: true,
-        trim: true,
+const workspacesCol = db.collection("workspaces");
+
+module.exports = {
+    workspacesCol,
+    findById: async (id) => {
+        const doc = await workspacesCol.doc(id).get();
+        return doc.exists ? { id: doc.id, ...doc.data() } : null;
     },
-    owner: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-        required: true,
+    findByMember: async (userId) => {
+        const snapshot = await workspacesCol.where("members", "array-contains", userId).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
-    members: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-    }],
-    createdAt: {
-        type: Date,
-        default: Date.now,
+    create: async (workspaceData) => {
+        const now = new Date();
+        const fullData = { ...workspaceData, createdAt: now };
+        const res = await workspacesCol.add(fullData);
+        return { id: res.id, ...fullData };
     }
-});
-
-module.exports = mongoose.model("Workspace", WorkspaceSchema);
+};

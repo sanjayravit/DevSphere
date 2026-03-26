@@ -1,44 +1,30 @@
-const mongoose = require("mongoose");
+const { db } = require("../config/firebase");
 
-const FileSchema = new mongoose.Schema({
-    name: { type: String, required: true },
-    content: { type: String, default: "" },
-    language: { type: String, default: "javascript" }
-});
+const projectsCol = db.collection("projects");
 
-const ChatMessageSchema = new mongoose.Schema({
-    role: { type: String, enum: ["user", "model"], required: true },
-    content: { type: String, required: true },
-    timestamp: { type: Date, default: Date.now }
-});
-
-const ProjectSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: true,
-        trim: true,
+module.exports = {
+    projectsCol,
+    findById: async (id) => {
+        const doc = await projectsCol.doc(id).get();
+        return doc.exists ? { id: doc.id, ...doc.data() } : null;
     },
-    workspaceId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Workspace",
-        required: true,
-        index: true // Index for fast scoping queries
+    findByWorkspace: async (workspaceId) => {
+        const snapshot = await projectsCol.where("workspaceId", "==", workspaceId).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
-    files: [FileSchema],
-    chatHistory: [ChatMessageSchema], // Persistent AI Memory context
-    createdAt: {
-        type: Date,
-        default: Date.now,
+    create: async (projectData) => {
+        const now = new Date();
+        const fullData = {
+            ...projectData,
+            createdAt: now,
+            updatedAt: now
+        };
+        const res = await projectsCol.add(fullData);
+        return { id: res.id, ...fullData };
     },
-    updatedAt: {
-        type: Date,
-        default: Date.now,
+    save: async (id, data) => {
+        const updatedAt = new Date();
+        await projectsCol.doc(id).set({ ...data, updatedAt }, { merge: true });
+        return { id, ...data, updatedAt };
     }
-});
-
-// Update the updatedAt timestamp prior to scaling document saves
-ProjectSchema.pre('save', async function () {
-    this.updatedAt = Date.now();
-});
-
-module.exports = mongoose.model("Project", ProjectSchema);
+};

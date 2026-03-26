@@ -5,6 +5,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "3": "^2.1.0",
     "@ai-sdk/google": "^3.0.43",
     "@google/generative-ai": "^0.24.1",
     "ai": "^6.0.116",
@@ -13,9 +14,8 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "firebase-admin": "^13.1.0",
     "jsonwebtoken": "^9.0.3",
-    "mongodb": "^7.1.0",
-    "mongoose": "^9.3.1",
     "multer": "^2.1.1",
     "pdf-parse": "^2.4.5",
     "simple-git": "^3.33.0",

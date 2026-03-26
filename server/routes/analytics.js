@@ -9,9 +9,13 @@ const MarketplaceItem = require("../models/MarketplaceItem");
 router.get("/", auth, async (req, res) => {
     try {
         // Aggregate actual user data
-        const workspaces = await Workspace.find({ members: req.user.id });
-        const workspaceIds = workspaces.map(w => w._id);
-        const projects = await Project.find({ workspaceId: { $in: workspaceIds } });
+        const workspaces = await Workspace.findByMember(req.user.id);
+        const projects = [];
+
+        for (const w of workspaces) {
+            const workspaceProjects = await Project.findByWorkspace(w.id);
+            projects.push(...workspaceProjects);
+        }
 
         let totalAiInteractions = 0;
         let totalLinesOfCode = 0;
@@ -27,15 +31,13 @@ router.get("/", auth, async (req, res) => {
             }
         });
 
-        // Generate synthetic developer-grade Code Quality and Bug scores heavily relying on real DB stats
         const activeProjectsCount = projects.length;
         const codeQualityScore = activeProjectsCount === 0 ? 0 : Math.min(100, Math.floor(82 + (totalAiInteractions * 0.5) - (totalLinesOfCode * 0.001)));
-
         const bugFrequency = activeProjectsCount === 0 ? 0 : Math.max(1, Math.floor(15 - (totalAiInteractions * 0.2)));
 
-        const marketItems = await MarketplaceItem.find();
+        const marketItems = await MarketplaceItem.findAll();
         let totalMarketDownloads = 0;
-        marketItems.forEach(i => totalMarketDownloads += i.downloads);
+        marketItems.forEach(i => totalMarketDownloads += (i.downloads || 0));
 
         res.json({
             stats: {
@@ -64,3 +66,4 @@ router.get("/", auth, async (req, res) => {
 });
 
 module.exports = router;
+
