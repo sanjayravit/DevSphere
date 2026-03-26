@@ -1,27 +1,23 @@
 const https = require('https');
 
-const data = JSON.stringify({
-    email: 'test@example.com',
-    password: 'wrong_password'
-});
-
 const options = {
     hostname: 'devsphere-sj.vercel.app',
     port: 443,
     path: '/api/auth/login',
     method: 'POST',
     headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': data.length
+        'Content-Type': 'application/json'
     }
 };
 
 const req = https.request(options, res => {
-    console.log(`statusCode: ${res.statusCode}`);
-    console.log(`headers:`, res.headers);
-
+    let body = '';
     res.on('data', d => {
-        process.stdout.write(d);
+        body += d.toString();
+    });
+    res.on('end', () => {
+        console.log(`STATUS: ${res.statusCode}`);
+        console.log(`BODY: ${body}`);
     });
 });
 
@@ -29,5 +25,5 @@ req.on('error', error => {
     console.error(error);
 });
 
-req.write(data);
+req.write(JSON.stringify({ email: "test@example.com", password: "wrong" }));
 req.end();
