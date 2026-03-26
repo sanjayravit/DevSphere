@@ -26,7 +26,9 @@ app.get("/", (req, res) => {
 app.get("/api/health", (req, res) => {
   res.json({
     status: "healthy",
-    mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+    mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    hasMongoUri: !!process.env.MONGO_URI,
+    envVarsLoaded: Object.keys(process.env).length
   });
 });
 
