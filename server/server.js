@@ -25,18 +25,22 @@ app.get("/", (req, res) => {
 
 app.get("/api/health", async (req, res) => {
   try {
-    // Simple Firestore check
-    await db.collection('health_check').doc('status').set({ lastCheck: new Date() });
+    if (!db) {
+      return res.status(503).json({
+        status: "unhealthy",
+        database: "disconnected",
+        message: "Firebase Admin SDK not initialized. Check your environment variables."
+      });
+    }
+    // Simple firestore connectivity check
+    await db.collection("health").get();
     res.json({
       status: "healthy",
       database: "firestore",
-      envVarsLoaded: Object.keys(process.env).length
+      envVarsLoaded: Object.keys(process.env).filter(k => k.startsWith("FIREBASE_")).length
     });
   } catch (err) {
-    res.status(500).json({
-      status: "unhealthy",
-      error: err.message
-    });
+    res.status(500).json({ status: "unhealthy", error: err.message });
   }
 });
 

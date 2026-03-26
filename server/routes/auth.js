@@ -5,10 +5,14 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const auth = require("../middleware/auth");
 const axios = require('axios');
+const { db } = require("../config/firebase");
 
 // Register
 router.post("/register", async (req, res) => {
   try {
+    if (!db) {
+      return res.status(503).json({ error: "Database not initialized. Please check your Firebase environment variables.", code: "DB_INIT_ERROR" });
+    }
     const { email, password, username, name } = req.body;
 
     // Check for existing user
@@ -37,6 +41,9 @@ router.post("/register", async (req, res) => {
 // Login
 router.post("/login", async (req, res) => {
   try {
+    if (!db) {
+      return res.status(503).json({ error: "Database not initialized. Please check your Firebase environment variables.", code: "DB_INIT_ERROR" });
+    }
     const user = await User.findByEmail(req.body.email);
 
     if (!user) return res.status(404).json({ error: "No account found with this email.", code: "USER_NOT_FOUND" });

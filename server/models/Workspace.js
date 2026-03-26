@@ -1,21 +1,26 @@
 const { db } = require("../config/firebase");
 
-const workspacesCol = db.collection("workspaces");
+const getCol = () => db ? db.collection("workspaces") : null;
 
 module.exports = {
-    workspacesCol,
     findById: async (id) => {
-        const doc = await workspacesCol.doc(id).get();
+        const col = getCol();
+        if (!col) return null;
+        const doc = await col.doc(id).get();
         return doc.exists ? { id: doc.id, ...doc.data() } : null;
     },
     findByMember: async (userId) => {
-        const snapshot = await workspacesCol.where("members", "array-contains", userId).get();
+        const col = getCol();
+        if (!col) return [];
+        const snapshot = await col.where("members", "array-contains", userId).get();
         return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
     create: async (workspaceData) => {
+        const col = getCol();
+        if (!col) throw new Error("Database not initialized");
         const now = new Date();
         const fullData = { ...workspaceData, createdAt: now };
-        const res = await workspacesCol.add(fullData);
+        const res = await col.add(fullData);
         return { id: res.id, ...fullData };
     }
 };

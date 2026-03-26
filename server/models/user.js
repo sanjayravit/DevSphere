@@ -1,25 +1,33 @@
 const { db } = require("../config/firebase");
 
-const usersCol = db.collection("users");
+const getCol = () => db ? db.collection("users") : null;
 
 module.exports = {
-  usersCol,
   findById: async (id) => {
-    const doc = await usersCol.doc(id).get();
+    const col = getCol();
+    if (!col) return null;
+    const doc = await col.doc(id).get();
     return doc.exists ? { id: doc.id, ...doc.data() } : null;
   },
   findByEmail: async (email) => {
-    const snapshot = await usersCol.where("email", "==", email).limit(1).get();
+    const col = getCol();
+    if (!col) return null;
+    const snapshot = await col.where("email", "==", email).limit(1).get();
     if (snapshot.empty) return null;
     const doc = snapshot.docs[0];
     return { id: doc.id, ...doc.data() };
   },
   create: async (userData) => {
-    const res = await usersCol.add(userData);
+    const col = getCol();
+    if (!col) throw new Error("Database not initialized");
+    const res = await col.add(userData);
     return { id: res.id, ...userData };
   },
   update: async (id, data) => {
-    await usersCol.doc(id).update(data);
+    const col = getCol();
+    if (!col) throw new Error("Database not initialized");
+    await col.doc(id).update(data);
     return { id, ...data };
   }
 };
+
