@@ -8,6 +8,17 @@ const Workspace = require("../models/Workspace");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Vercel Serverless Polyfills for pdf-parse (canvas-free)
+if (typeof global.DOMMatrix === "undefined") {
+    global.DOMMatrix = class DOMMatrix { };
+}
+if (typeof global.ImageData === "undefined") {
+    global.ImageData = class ImageData { };
+}
+if (typeof global.Path2D === "undefined") {
+    global.Path2D = class Path2D { };
+}
+
 const pdfParse = require("pdf-parse");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key_to_prevent_crash");
