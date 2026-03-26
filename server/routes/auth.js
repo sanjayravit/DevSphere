@@ -26,7 +26,7 @@ router.post("/register", async (req, res) => {
     if (err.code === 11000) {
       return res.status(409).json({ error: "An account with this email already exists.", code: "DUPLICATE_EMAIL" });
     }
-    res.status(500).json({ error: "Registration failed. Please try again.", code: "REGISTRATION_ERROR" });
+    res.status(500).json({ error: "Registration failed. Please try again.", details: err.message, code: "REGISTRATION_ERROR" });
   }
 });
 
@@ -45,7 +45,7 @@ router.post("/login", async (req, res) => {
     res.json({ token });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Authentication failed. Please try again later.", code: "SERVER_ERROR" });
+    res.status(500).json({ error: "Authentication failed. Please try again later.", details: err.message, code: "SERVER_ERROR" });
   }
 });
 
