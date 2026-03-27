@@ -1,4 +1,6 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { jwtDecode } from 'jwt-decode';
+import api from '../services/api';
 import { auth, googleProvider, githubProvider } from '../firebase';
 import {
     signInWithPopup,
