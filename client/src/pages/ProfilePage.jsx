@@ -51,6 +51,7 @@ export const ProfilePage = () => {
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         className="w-full md:w-64"
+                        autoComplete="username"
                     />
                     <Button type="submit" isLoading={loading}>Fetch</Button>
                 </form>
