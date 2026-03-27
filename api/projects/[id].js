@@ -18,7 +18,12 @@ module.exports = async (req, res) => {
     const { id } = req.query;
 
     try {
-        if (!db) return res.status(503).json({ error: "Database not initialized" });
+        if (!db) {
+            return res.status(503).json({
+                error: "Database not initialized",
+                details: "Firestore instance is missing. Check Vercel logs."
+            });
+        }
 
         if (req.method === "GET") {
             const doc = await db.collection("projects").doc(id).get();

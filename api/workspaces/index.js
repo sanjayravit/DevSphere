@@ -17,7 +17,12 @@ module.exports = async (req, res) => {
     }
 
     try {
-        if (!db) return res.status(503).json({ error: "Database not initialized" });
+        if (!db) {
+            return res.status(503).json({
+                error: "Database not initialized",
+                details: "Firestore instance is missing. Check Vercel logs."
+            });
+        }
 
         // VERY SIMPLE auth check (should verify JWT but let's just get it working first)
         const userId = req.headers.authorization?.replace("Bearer ", "");

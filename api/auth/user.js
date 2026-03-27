@@ -26,6 +26,13 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: "Missing idToken" });
         }
 
+        if (!db) {
+            return res.status(503).json({
+                error: "Database not initialized",
+                details: "Firestore instance is missing. Check server logs."
+            });
+        }
+
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const { uid, email, picture } = decodedToken;
 
