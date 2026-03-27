@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
             if (fbUser) {
                 const idToken = await fbUser.getIdToken();
                 try {
-                    const res = await api.post('/auth/firebase-sync', { idToken });
+                    const res = await api.post('/auth/user', { idToken });
                     localStorage.setItem('token', res.data.token);
                     setUser(res.data.user);
                 } catch (err) {
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }) => {
         try {
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
             const idToken = await userCredential.user.getIdToken();
-            const res = await api.post('/auth/firebase-sync', { idToken });
+            const res = await api.post('/auth/user', { idToken });
             localStorage.setItem('token', res.data.token);
             setUser(res.data.user);
             return res.data;
@@ -56,7 +56,7 @@ export const AuthProvider = ({ children }) => {
         try {
             const result = await signInWithPopup(auth, googleProvider);
             const idToken = await result.user.getIdToken();
-            const res = await api.post('/auth/firebase-sync', { idToken });
+            const res = await api.post('/auth/user', { idToken });
             localStorage.setItem('token', res.data.token);
             setUser(res.data.user);
             return res.data;
@@ -70,7 +70,7 @@ export const AuthProvider = ({ children }) => {
         try {
             const result = await signInWithPopup(auth, githubProvider);
             const idToken = await result.user.getIdToken();
-            const res = await api.post('/auth/firebase-sync', { idToken });
+            const res = await api.post('/auth/user', { idToken });
             localStorage.setItem('token', res.data.token);
             setUser(res.data.user);
             return res.data;
@@ -84,7 +84,7 @@ export const AuthProvider = ({ children }) => {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const idToken = await userCredential.user.getIdToken();
-            const res = await api.post('/auth/firebase-sync', { idToken, name });
+            const res = await api.post('/auth/user', { idToken, name });
             localStorage.setItem('token', res.data.token);
             setUser(res.data.user);
             return res.data;
