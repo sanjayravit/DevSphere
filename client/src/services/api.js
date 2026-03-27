@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 const getBaseURL = () => {
-    if (process.env.NODE_ENV === 'production') {
-        return process.env.REACT_APP_API_URL || "/api";
+    // Force Vercel to use the relative /api path which points to the same domain's serverless functions
+    if (process.env.NODE_ENV === 'production' || window.location.hostname.includes('vercel.app')) {
+        return "/api";
     }
     return process.env.REACT_APP_API_URL || "http://localhost:5050/api";
 };
