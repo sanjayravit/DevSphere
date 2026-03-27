@@ -59,7 +59,11 @@ module.exports = async (req, res) => {
             user: { id: uid, ...userData }
         });
     } catch (error) {
-        console.error("Auth Sync Error:", error);
-        res.status(401).json({ error: "Invalid token" });
+        console.error("Auth Sync Error:", error.message);
+        res.status(401).json({
+            error: "Invalid token",
+            details: error.message,
+            projectId: process.env.FIREBASE_PROJECT_ID
+        });
     }
 };
