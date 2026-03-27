@@ -108,6 +108,7 @@ export const LoginSignupPage = () => {
                                     placeholder="Full Name"
                                     value={formData.name}
                                     onChange={handleChange}
+                                    autoComplete="name"
                                 />
                             </motion.div>
                         )}
@@ -120,6 +121,7 @@ export const LoginSignupPage = () => {
                         placeholder="Email Address"
                         value={formData.email}
                         onChange={handleChange}
+                        autoComplete="email"
                     />
 
                     <Input
@@ -129,6 +131,7 @@ export const LoginSignupPage = () => {
                         placeholder="Password"
                         value={formData.password}
                         onChange={handleChange}
+                        autoComplete={isLogin ? "current-password" : "new-password"}
                     />
 
                     <Button
