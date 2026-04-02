@@ -145,7 +145,7 @@ router.get('/github/callback', async (req, res) => {
 
 
 // Firebase Auth Sync
-router.post("/firebase-sync", async (req, res) => {
+router.post("/user", async (req, res) => {
   try {
     const { idToken } = req.body;
     const decodedToken = await admin.auth().verifyIdToken(idToken);

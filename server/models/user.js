@@ -4,6 +4,7 @@ const getCol = () => db ? db.collection("users") : null;
 
 module.exports = {
   findById: async (id) => {
+    if (!id) return null;
     const col = getCol();
     if (!col) return null;
     const doc = await col.doc(id).get();

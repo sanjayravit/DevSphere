@@ -4,6 +4,10 @@
         {
             "source": "/socket.io/(.*)",
             "destination": "https://devsphere-uh2m.onrender.com/socket.io/$1"
+        },
+        {
+            "source": "/api/(.*)",
+            "destination": "/api/index.js"
         }
     ]
 }
