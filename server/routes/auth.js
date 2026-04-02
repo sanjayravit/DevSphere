@@ -179,6 +179,12 @@ router.post("/user", async (req, res) => {
     res.json({ token, user });
   } catch (err) {
     console.error("Firebase Sync Error:", err.message);
+
+    // If the error came from Firestore (like PERMISSION_DENIED)
+    if (err.message && err.message.includes("PERMISSION_DENIED")) {
+      return res.status(500).json({ error: "Database Error", details: "Firestore Database has not been created or lacks permissions. Please go to Firebase Console -> Firestore Database -> Create Database." });
+    }
+
     res.status(401).json({ error: "Invalid Firebase token", details: err.message, stack: err.stack });
   }
 });
