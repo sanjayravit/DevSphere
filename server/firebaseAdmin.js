@@ -2,11 +2,14 @@ const admin = require("firebase-admin");
 
 if (!admin.apps.length) {
     try {
-        const serviceAccount = process.env.NODE_ENV === "production"
+        const rawKey = process.env.FIREBASE_PRIVATE_KEY || "";
+        const privateKey = rawKey.replace(/\\n/g, '\n').replace(/^"|"$/g, '');
+
+        const serviceAccount = privateKey
             ? {
                 projectId: process.env.FIREBASE_PROJECT_ID,
                 clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, '\n').replace(/^"|"$/g, ''),
+                privateKey: privateKey,
             }
             : require("./serviceAccountKey.json");
 
@@ -28,4 +31,4 @@ const getDb = () => {
     }
 };
 
-module.exports = { admin, getDb };
+module.exports = { admin, getDb, db: getDb() };
