@@ -147,7 +147,15 @@ router.get('/github/callback', async (req, res) => {
 // Firebase Auth Sync
 router.post("/user", async (req, res) => {
   try {
+    if (!admin.apps.length) {
+      return res.status(503).json({
+        error: "Server configuration missing",
+        details: "Firebase Admin is not initialized. Please check Vercel environment variables."
+      });
+    }
     const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ error: "idToken is required" });
+
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const { uid, email, name, picture } = decodedToken;
 
@@ -171,7 +179,7 @@ router.post("/user", async (req, res) => {
     res.json({ token, user });
   } catch (err) {
     console.error("Firebase Sync Error:", err.message);
-    res.status(401).json({ error: "Invalid Firebase token" });
+    res.status(401).json({ error: "Invalid Firebase token", details: err.message, stack: err.stack });
   }
 });
 
