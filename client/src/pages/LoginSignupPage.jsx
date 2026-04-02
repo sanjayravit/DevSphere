@@ -21,6 +21,20 @@ export const LoginSignupPage = () => {
         if (err) setError("Authentication failed.");
     }, [searchParams]);
 
+    const getErrorMessage = (err) => {
+        let msg = err.response?.data?.error || err.message || 'Authentication failed. Please try again.';
+        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+            msg = 'Incorrect email or password.';
+        } else if (err.code === 'auth/email-already-in-use') {
+            msg = 'An account with this email already exists.';
+        } else if (err.code === 'auth/popup-closed-by-user') {
+            msg = 'The sign-in popup was closed before completing.';
+        } else if (err.code === 'auth/account-exists-with-different-credential') {
+            msg = 'This email is already associated with another sign-in method. Please log in using that method.';
+        }
+        return msg;
+    };
+
     const handleSocialLogin = async (provider) => {
         setError('');
         setLoading(true);
@@ -29,7 +43,7 @@ export const LoginSignupPage = () => {
             else await loginWithGithub();
             navigate('/dashboard');
         } catch (err) {
-            setError(err.message || 'Social login failed');
+            setError(getErrorMessage(err));
         } finally {
             setLoading(false);
         }
@@ -53,7 +67,7 @@ export const LoginSignupPage = () => {
             }
             navigate('/dashboard');
         } catch (err) {
-            setError(err.response?.data?.error || 'Authentication failed. Please try again.');
+            setError(getErrorMessage(err));
         } finally {
             setLoading(false);
         }

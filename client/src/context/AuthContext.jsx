@@ -7,7 +7,10 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     signOut,
-    onAuthStateChanged
+    onAuthStateChanged,
+    fetchSignInMethodsForEmail,
+    linkWithCredential,
+    GithubAuthProvider
 } from 'firebase/auth';
 
 const AuthContext = createContext();
@@ -68,6 +71,27 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const handleAccountLinkingError = async (err) => {
+        if (err.code === 'auth/account-exists-with-different-credential') {
+            const email = err.customData?.email;
+            const pendingCredential = GithubAuthProvider.credentialFromError(err);
+            if (!email || !pendingCredential) throw err;
+
+            const methods = await fetchSignInMethodsForEmail(auth, email);
+
+            if (methods.includes('google.com')) {
+                const result = await signInWithPopup(auth, googleProvider);
+                await linkWithCredential(result.user, pendingCredential);
+                const idToken = await result.user.getIdToken();
+                const res = await api.post('/auth/user', { idToken });
+                localStorage.setItem('token', res.data.token);
+                setUser(res.data.user);
+                return res.data;
+            }
+        }
+        throw err;
+    };
+
     const loginWithGithub = async () => {
         try {
             const result = await signInWithPopup(auth, githubProvider);
@@ -77,6 +101,9 @@ export const AuthProvider = ({ children }) => {
             setUser(res.data.user);
             return res.data;
         } catch (err) {
+            if (err.code === 'auth/account-exists-with-different-credential') {
+                return await handleAccountLinkingError(err);
+            }
             console.error("Github Login error", err);
             throw err;
         }

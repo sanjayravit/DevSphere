@@ -13,6 +13,12 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
+  res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+  next();
+});
+
 app.use(cors({
   origin: [/https:\/\/.*\.vercel\.app$/, "https://devsphere-sj.vercel.app", "https://dev-sphere-sj.vercel.app", "http://localhost:3000"],
   credentials: true
