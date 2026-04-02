@@ -3,10 +3,16 @@ const path = require('path');
 const simpleGit = require('simple-git');
 const Project = require('../models/Project');
 
-const GIT_CACHE_DIR = path.join(__dirname, '..', 'git-cache');
+const GIT_CACHE_DIR = (process.env.NODE_ENV === 'production' || process.env.VERCEL)
+    ? path.join('/tmp', 'git-cache')
+    : path.join(__dirname, '..', 'git-cache');
 
 if (!fs.existsSync(GIT_CACHE_DIR)) {
-    fs.mkdirSync(GIT_CACHE_DIR, { recursive: true });
+    try {
+        fs.mkdirSync(GIT_CACHE_DIR, { recursive: true });
+    } catch (e) {
+        console.warn("Could not create GIT_CACHE_DIR:", e.message);
+    }
 }
 
 // Ensure the local git dir reflects the MongoDB state

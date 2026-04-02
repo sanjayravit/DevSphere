@@ -63,11 +63,12 @@ router.post("/login", async (req, res) => {
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    if (user) delete user.password;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    delete user.password;
     res.json(user);
   } catch (err) {
     console.error(err.message);
-    res.status(500).send('Server Error');
+    res.status(500).json({ error: 'Server Error' });
   }
 });
 
@@ -85,6 +86,12 @@ router.get('/github', (req, res) => {
 // @access  Public
 router.get('/github/callback', async (req, res) => {
   const { code } = req.query;
+  const frontendUrl = req.headers.origin || "https://devsphere-sj.vercel.app";
+
+  if (!code) {
+    return res.redirect(`${frontendUrl}/login?error=oauth_no_code`);
+  }
+
   try {
     const tokenRes = await axios.post('https://github.com/login/oauth/access_token', {
       client_id: process.env.GITHUB_CLIENT_ID,
@@ -185,7 +192,13 @@ router.post("/user", async (req, res) => {
       return res.status(500).json({ error: "Database Error", details: "Firestore Database has not been created or lacks permissions. Please go to Firebase Console -> Firestore Database -> Create Database." });
     }
 
-    res.status(401).json({ error: "Invalid Firebase token", details: err.message, stack: err.stack });
+    // Only expose stack in development to avoid leaking internals
+    const isDev = process.env.NODE_ENV !== 'production';
+    res.status(401).json({
+      error: "Invalid Firebase token",
+      details: err.message,
+      ...(isDev && { stack: err.stack })
+    });
   }
 });
 

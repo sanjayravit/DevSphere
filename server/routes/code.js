@@ -6,6 +6,7 @@ const WANDBOX_COMPILERS = {
   63: "nodejs-20.17.0",
   71: "cpython-3.14.0",
   62: "openjdk-jdk-22+36",
+  54: "gcc-13.2.0-cpp",
   50: "gcc-13.2.0-c"
 };
 

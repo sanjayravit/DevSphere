@@ -40,7 +40,7 @@ router.get("/", auth, async (req, res) => {
         res.json(populatedWorkspaces);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send("Server Error");
+        res.status(500).json({ error: "Server Error" });
     }
 });
 

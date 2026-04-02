@@ -86,7 +86,7 @@ router.get("/workspace/:workspaceId", auth, async (req, res) => {
         res.json(summary);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send("Server Error");
+        res.status(500).json({ error: "Server Error" });
     }
 });
 
@@ -104,7 +104,7 @@ router.get("/:projectId", auth, async (req, res) => {
         res.json(project);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send("Server Error");
+        res.status(500).json({ error: "Server Error" });
     }
 });
 
@@ -126,7 +126,7 @@ router.put("/:projectId/files", auth, async (req, res) => {
         res.json(updatedProject);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send("Server Error");
+        res.status(500).json({ error: "Server Error" });
     }
 });
 
