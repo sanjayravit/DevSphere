@@ -43,6 +43,7 @@ app.get("/api/health", async (req, res) => {
     res.json({
       status: "healthy",
       database: "firestore",
+      projectId: process.env.FIREBASE_PROJECT_ID || "missing",
       envVarsLoaded: Object.keys(process.env).filter(k => k.startsWith("FIREBASE_")).length
     });
   } catch (err) {

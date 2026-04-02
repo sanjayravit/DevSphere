@@ -32,6 +32,11 @@ export const LoginSignupPage = () => {
         } else if (err.code === 'auth/account-exists-with-different-credential') {
             msg = 'This email is already associated with another sign-in method. Please log in using that method.';
         }
+
+        if (err.response?.data?.details) {
+            msg += ` (Details: ${err.response.data.details})`;
+        }
+
         return msg;
     };
 
