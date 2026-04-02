@@ -70,6 +70,7 @@ export const CodeEditorPage = () => {
     const editorRef = useRef(null);
     const monacoRef = useRef(null);
     const latestUser = useLatest(user);
+    const completionsDisposableRef = useRef(null); // Track inline completions registration to avoid stale closures
 
     // Initial project schema fetching
     useEffect(() => {
@@ -311,14 +312,23 @@ export const CodeEditorPage = () => {
         setActiveFileIndex(index);
         setCode(files[index].content);
         setLanguage(files[index].language);
+        // Notify collaborators which file you switched to
+        if (socket) {
+            socket.emit('code-change', { roomId: projectId, code: { code: files[index].content, fileIndex: index } });
+        }
     };
 
     const handleEditorDidMount = (editor, monaco) => {
         editorRef.current = editor;
         monacoRef.current = monaco;
 
+        // Dispose stale provider before re-registering to avoid duplicate ghost completions
+        if (completionsDisposableRef.current) {
+            completionsDisposableRef.current.dispose();
+        }
+
         // Register Inline Completions Provider for Ghost Text
-        monaco.languages.registerInlineCompletionsProvider(language, {
+        completionsDisposableRef.current = monaco.languages.registerInlineCompletionsProvider(language, {
             provideInlineCompletions: async (model, position) => {
                 // Get code up to current cursor position to give context to AI
                 const textUntilPosition = model.getValueInRange({
@@ -530,20 +540,55 @@ export const CodeEditorPage = () => {
         }
     };
 
+    // Maps a language key to its single-line comment prefix
+    const COMMENT_PREFIXES = {
+        javascript: '//',
+        python: '#',
+        java: '//',
+        c: '//',
+        cpp: '//',
+    };
+
     const handleLanguageChange = (e) => {
         const newLang = e.target.value;
         setLanguage(newLang);
 
-        // Check if code matches any default template or the old welcome text
+        // Check if code is still a default/welcome template (no real user content)
         const isDefaultCode = Object.values(DEFAULT_TEMPLATES).some(t => code.trim() === t.trim())
             || code.includes('Welcome to DevSphere')
-            || code.includes('// Loading workspace');
+            || code.includes('// Loading workspace')
+            || code.includes('# Loading workspace');
 
         if (isDefaultCode) {
+            // Replace the whole template when in default state
             const newTemplate = DEFAULT_TEMPLATES[newLang] || DEFAULT_TEMPLATES.javascript;
             setCode(newTemplate);
             if (socket) {
                 socket.emit('code-change', { roomId: projectId, code: { code: newTemplate, fileIndex: activeFileIndex } });
+            }
+        } else {
+            // User has real code: only convert comment prefixes so their work isn't lost
+            const oldPrefix = COMMENT_PREFIXES[language] || '//';
+            const newPrefix = COMMENT_PREFIXES[newLang] || '//';
+            if (oldPrefix !== newPrefix) {
+                const converted = code
+                    .split('\n')
+                    .map(line => {
+                        const trimmed = line.trimStart();
+                        const indent = line.slice(0, line.length - trimmed.length);
+                        if (trimmed.startsWith(oldPrefix + ' ')) {
+                            return indent + newPrefix + ' ' + trimmed.slice(oldPrefix.length + 1);
+                        }
+                        if (trimmed === oldPrefix) {
+                            return indent + newPrefix;
+                        }
+                        return line;
+                    })
+                    .join('\n');
+                setCode(converted);
+                if (socket) {
+                    socket.emit('code-change', { roomId: projectId, code: { code: converted, fileIndex: activeFileIndex } });
+                }
             }
         }
     };
@@ -808,7 +853,7 @@ export const CodeEditorPage = () => {
                                     placeholder="Commit message (e.g. Add auth feature)"
                                     className="w-full bg-dark-950 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary-500 text-white placeholder-gray-500"
                                 />
-                                <Button type="submit" isLoading={isCommitting} className="w-full justify-center gap-2 py-2 text-sm">
+                                <Button type="submit" isLoading={isCommitting} disabled={isCommitting || !commitMessage.trim()} className="w-full justify-center gap-2 py-2 text-sm">
                                     <GitCommit size={14} /> Commit & AI Review
                                 </Button>
                             </form>
@@ -822,7 +867,7 @@ export const CodeEditorPage = () => {
                                     <div key={idx} className="p-3 bg-dark-900/80 border border-white/5 rounded-xl hover:bg-white/5 transition-colors group">
                                         <div className="flex items-center justify-between mb-1.5">
                                             <span className="text-xs font-mono text-primary-400">{commit.hash?.substring(0, 7) || 'HEAD'}</span>
-                                            <span className="text-[10px] text-gray-500">{new Date(commit.date).toLocaleDateString()}</span>
+                                            <span className="text-[10px] text-gray-500">{commit.date ? new Date(commit.date).toLocaleDateString() : 'Unknown'}</span>
                                         </div>
                                         <div className="text-sm text-gray-300 font-medium truncate">{commit.message}</div>
                                         <div className="text-[10px] text-gray-500 mt-1 flex items-center gap-1.5">
