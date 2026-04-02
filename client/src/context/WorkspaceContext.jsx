@@ -62,17 +62,33 @@ export const WorkspaceProvider = ({ children }) => {
     };
 
     const createWorkspace = async (name) => {
-        const res = await api.post('/workspaces', { name });
-        setWorkspaces([...workspaces, res.data]);
-        changeWorkspace(res.data);
-        return res.data;
+        try {
+            const res = await api.post('/workspaces', { name });
+            if (res.data && !res.data.error) {
+                setWorkspaces([...workspaces, res.data]);
+                changeWorkspace(res.data);
+                return res.data;
+            }
+        } catch (err) {
+            console.error("Create workspace error:", err);
+            throw err;
+        }
     };
 
     const createProject = async (name, language = 'javascript', generateWithAI = false) => {
         if (!activeWorkspace) throw new Error("No active workspace");
-        const res = await api.post(`/projects/${activeWorkspace.id}`, { name, language, generateWithAI });
-        setProjects([...projects, res.data]);
-        return res.data;
+        try {
+            const res = await api.post(`/projects/${activeWorkspace.id}`, { name, language, generateWithAI });
+            if (res.data && !res.data.error) {
+                setProjects([...projects, res.data]);
+                return res.data;
+            } else {
+                throw new Error(res.data?.error || "Failed to create project");
+            }
+        } catch (err) {
+            console.error("Create project API error:", err);
+            throw err;
+        }
     };
 
     return (
