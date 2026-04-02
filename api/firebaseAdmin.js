@@ -32,7 +32,4 @@ const getDb = () => {
   }
 };
 
-module.exports = {
-  admin,
-  get db() { return getDb(); }
-};
+module.exports = { admin, getDb };

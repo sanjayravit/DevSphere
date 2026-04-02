@@ -1,4 +1,5 @@
-const { admin, db } = require("../firebaseAdmin");
+const { admin, getDb } = require("../firebaseAdmin");
+const db = getDb();
 const jwt = require("jsonwebtoken");
 
 module.exports = async (req, res) => {

@@ -6,7 +6,8 @@
     "scripts": {
         "postinstall": "cd client && npm install",
         "build": "cd client && npm run build",
-        "start": "node server/server.js"
+        "start": "node server/server.js",
+        "lint": "eslint . --fix"
     },
     "dependencies": {
         "@ai-sdk/google": "^3.0.43",

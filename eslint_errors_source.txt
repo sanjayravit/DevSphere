@@ -1,0 +1,11 @@
+
+E:\DevSphere\server\routes\ai.js
+  138:216  error  Unnecessary escape character: \`  no-useless-escape
+  138:218  error  Unnecessary escape character: \`  no-useless-escape
+  138:220  error  Unnecessary escape character: \`  no-useless-escape
+  140:179  error  Unnecessary escape character: \`  no-useless-escape
+  140:181  error  Unnecessary escape character: \`  no-useless-escape
+  140:183  error  Unnecessary escape character: \`  no-useless-escape
+
+Γ£û 6 problems (6 errors, 0 warnings)
+

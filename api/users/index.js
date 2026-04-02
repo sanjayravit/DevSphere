@@ -1,4 +1,5 @@
-const { db } = require("../firebaseAdmin");
+const { getDb } = require("../firebaseAdmin");
+const db = getDb();
 
 module.exports = async (req, res) => {
     // CORS Headers

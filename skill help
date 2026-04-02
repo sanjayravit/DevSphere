@@ -1,0 +1,8 @@
+@brainstorming   for planning before implementation.
+@test-driven-development    for TDD-oriented work.
+@debugging-strategies    for systematic troubleshooting.
+@lint-and-validate   for lightweight quality checks.
+@security-auditor    for security-focused reviews.
+@frontend-design    for UI and interaction quality.
+@api-design-principles    for API shape and consistency.
+@create-pr   for packaging work into a clean pull request.

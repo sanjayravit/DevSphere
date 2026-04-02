@@ -135,9 +135,9 @@ router.post("/copilot", auth, async (req, res) => {
             const schema = `[{"line": 5, "message": "Expected comma"}]`;
             instruction = `Analyze this code for syntax errors and obvious logic bugs. Return EXACTLY a raw JSON array matching this schema: ${schema}. If perfect, return []. Do NOT output markdown ticks or conversational text.`;
         } else if (action === "continue") {
-            instruction = "Look at the context of this code and explicitly generate the next logical lines or functions. ONLY return the new code to append, do not output conversational text or markdown blocks like \`\`\`javascript.";
+            instruction = "Look at the context of this code and explicitly generate the next logical lines or functions. ONLY return the new code to append, do not output conversational text or markdown blocks like ```javascript.";
         } else if (action === "refactor") {
-            instruction = "Refactor this entire file to achieve better performance, readability, and modern styling. Return ONLY the refactored code without markdown blocks like \`\`\`javascript.";
+            instruction = "Refactor this entire file to achieve better performance, readability, and modern styling. Return ONLY the refactored code without markdown blocks like ```javascript.";
         } else if (action === "convert") {
             instruction = `Convert this code to ${req.body.targetLanguage || 'a modern format'}. Return ONLY the converted code without markdown blocks like \`\`\`javascript.`;
         } else {

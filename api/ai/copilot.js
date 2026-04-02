@@ -1,4 +1,5 @@
-const { admin, db } = require("../firebaseAdmin");
+const { admin, getDb } = require("../firebaseAdmin");
+const db = getDb();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy");
@@ -33,7 +34,7 @@ module.exports = async (req, res) => {
         } else if (action === "bugs") {
             instruction = "Find bugs and issues in this code and explain them. Do NOT explain the full code.";
         } else if (action === "optimize" || action === "optimise") {
-            instruction = "Optimize this code, fix errors, and return improved version only. Do NOT include conversational text or markdown code blocks like ```javascript.";
+            instruction = "Optimize this code, fix errors, and return improved version only. Do NOT include conversational text or markdown code blocks like \\`\\`\\`javascript.";
         } else if (action === "chat") {
             instruction = `The user is asking a direct question regarding the code context. Question: ${message}`;
         } else if (action === "project-query") {
@@ -42,16 +43,16 @@ module.exports = async (req, res) => {
             const schema = `[{"line": 5, "message": "Expected comma"}]`;
             instruction = `Analyze this code for syntax errors and obvious logic bugs. Return EXACTLY a raw JSON array matching this schema: ${schema}. If perfect, return []. Do NOT output markdown ticks or conversational text.`;
         } else if (action === "continue") {
-            instruction = "Look at the context of this code and explicitly generate the next logical lines or functions. ONLY return the new code to append, do not output conversational text or markdown blocks like ```javascript.";
+            instruction = "Look at the context of this code and explicitly generate the next logical lines or functions. ONLY return the new code to append, do not output conversational text or markdown blocks like \\`\\`\\`javascript.";
         } else if (action === "refactor") {
-            instruction = "Refactor this entire file to achieve better performance, readability, and modern styling. Return ONLY the refactored code without markdown blocks like ```javascript.";
+            instruction = "Refactor this entire file to achieve better performance, readability, and modern styling. Return ONLY the refactored code without markdown blocks like \\`\\`\\`javascript.";
         } else if (action === "convert") {
-            instruction = `Convert this code to ${targetLanguage || 'a modern format'}. Return ONLY the converted code without markdown blocks like ```javascript.`;
+            instruction = `Convert this code to ${targetLanguage || 'a modern format'}. Return ONLY the converted code without markdown blocks like \`\`\`javascript.`;
         } else {
             instruction = "Analyze this code.";
         }
 
-        const finalPrompt = `${ instruction } \n\nCode State: \n${ code } `;
+        const finalPrompt = `${instruction} \n\nCode State: \n${code} `;
 
         const result = await model.generateContent(finalPrompt);
         const responseText = result.response.text();
@@ -59,9 +60,9 @@ module.exports = async (req, res) => {
         // Record interaction if projectId is provided
         if (projectId && db) {
             const projectRef = db.collection("projects").doc(projectId);
-            const chatMsgUser = { role: 'user', content: message || `Action: ${ action } `, timestamp: new Date() };
+            const chatMsgUser = { role: 'user', content: message || `Action: ${action} `, timestamp: new Date() };
             const chatMsgAI = { role: 'model', content: responseText, timestamp: new Date() };
-            
+
             await projectRef.update({
                 chatHistory: admin.firestore.FieldValue.arrayUnion(chatMsgUser, chatMsgAI)
             }).catch(err => console.error("Firestore Update Error:", err));
