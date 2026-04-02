@@ -250,8 +250,16 @@ export const Sidebar = () => {
                             {generateWithAI && <div className="w-2 h-2 rounded-full bg-white" />}
                         </div>
                     </button>
-                    <Button type="submit" className="w-full" disabled={!newProjectName.trim() || isCreatingProject} isLoading={isCreatingProject}>
-                        {isCreatingProject ? (generateWithAI ? 'AI Building…' : 'Creating…') : 'Generate Project'}
+                    <Button
+                        type="submit"
+                        className="w-full"
+                        disabled={!newProjectName.trim() || isCreatingProject || !activeWorkspace}
+                        isLoading={isCreatingProject}
+                    >
+                        {isCreatingProject
+                            ? (generateWithAI ? 'AI Building…' : 'Creating…')
+                            : (!activeWorkspace ? 'Waiting for Workspace...' : 'Generate Project')
+                        }
                     </Button>
                 </form>
             </Modal>
