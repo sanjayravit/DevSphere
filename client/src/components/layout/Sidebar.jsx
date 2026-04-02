@@ -52,6 +52,8 @@ export const Sidebar = () => {
     const [newWorkspaceName, setNewWorkspaceName] = useState("");
     const [newProjectName, setNewProjectName] = useState("");
     const [newProjectLanguage, setNewProjectLanguage] = useState("javascript");
+    const [generateWithAI, setGenerateWithAI] = useState(false);
+    const [isCreatingProject, setIsCreatingProject] = useState(false);
 
     const handleLogout = () => {
         logout();
@@ -61,10 +63,18 @@ export const Sidebar = () => {
     const handleCreateProject = async (e) => {
         e.preventDefault();
         if (newProjectName.trim()) {
-            const project = await createProject(newProjectName, newProjectLanguage);
-            setCreateProjectModalOpen(false);
-            setNewProjectName("");
-            if (project) navigate(`/editor/${project.id}`);
+            setIsCreatingProject(true);
+            try {
+                const project = await createProject(newProjectName, newProjectLanguage, generateWithAI);
+                setCreateProjectModalOpen(false);
+                setNewProjectName("");
+                setGenerateWithAI(false);
+                if (project) navigate(`/editor/${project.id}`);
+            } catch (err) {
+                console.error("Create project error:", err);
+            } finally {
+                setIsCreatingProject(false);
+            }
         }
     };
 
@@ -223,8 +233,25 @@ export const Sidebar = () => {
                             <option value="cpp">C++</option>
                         </select>
                     </div>
-                    <Button type="submit" className="w-full" disabled={!newProjectName.trim()}>
-                        Generate Project
+                    {/* AI Scaffolding Toggle */}
+                    <button
+                        type="button"
+                        onClick={() => setGenerateWithAI(!generateWithAI)}
+                        className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-300 text-left ${generateWithAI ? 'border-primary-500/50 bg-primary-500/10 text-primary-400' : 'border-white/10 bg-dark-800/30 text-gray-400 hover:border-primary-500/30 hover:text-primary-300'}`}
+                    >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${generateWithAI ? 'bg-primary-500/20' : 'bg-white/5'}`}>
+                            <BrainCircuit size={16} className={generateWithAI ? 'text-primary-400' : 'text-gray-500'} />
+                        </div>
+                        <div>
+                            <div className="text-sm font-semibold">Generate with AI ✨</div>
+                            <div className="text-xs opacity-70">{generateWithAI ? 'AI will scaffold production-ready code for this project' : 'Click to enable AI code scaffolding'}</div>
+                        </div>
+                        <div className={`ml-auto w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${generateWithAI ? 'border-primary-500 bg-primary-500' : 'border-gray-600'}`}>
+                            {generateWithAI && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                    </button>
+                    <Button type="submit" className="w-full" disabled={!newProjectName.trim() || isCreatingProject} isLoading={isCreatingProject}>
+                        {isCreatingProject ? (generateWithAI ? 'AI Building…' : 'Creating…') : 'Generate Project'}
                     </Button>
                 </form>
             </Modal>
