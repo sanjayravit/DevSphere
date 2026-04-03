@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Search, Bell, Command, ChevronDown, User, Settings, LogOut, Sparkles, GitCommit, Code2, Zap, MessageSquare, Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
+import { useNavigate } from 'react-router-dom';
 
 const MOCK_NOTIFICATIONS = [
     { id: 1, type: 'ai', icon: Sparkles, title: 'AI optimized your auth module', time: '2 min ago', unread: true },
@@ -13,6 +14,7 @@ const MOCK_NOTIFICATIONS = [
 export const Topbar = ({ onMenuClick }) => {
     const { user, logout } = useAuth();
     const { activeWorkspace } = useWorkspace();
+    const navigate = useNavigate();
     const [showNotifications, setShowNotifications] = useState(false);
     const notifRef = useRef(null);
 
@@ -132,16 +134,25 @@ export const Topbar = ({ onMenuClick }) => {
                 <div className="h-8 w-px bg-white/5 mx-1"></div>
 
                 {/* Profile Section */}
-                <div className="flex items-center gap-3 pl-2">
+                <div
+                    onClick={() => navigate('/profile')}
+                    className="flex items-center gap-3 pl-2 cursor-pointer group"
+                >
                     <div className="flex flex-col items-end hidden md:flex">
-                        <span className="text-sm font-medium text-white truncate max-w-[120px]">{user?.name || 'Developer'}</span>
+                        <span className="text-sm font-medium text-white truncate max-w-[120px] group-hover:text-primary-300 transition-colors">{user?.name || 'Developer'}</span>
                         <div className="flex items-center gap-1 text-[10px] text-primary-400 font-semibold uppercase tracking-wider">
                             <Sparkles size={10} />
                             Pro Account
                         </div>
                     </div>
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center border border-white/10 text-white font-bold shadow-neon-blue cursor-pointer hover:scale-105 transition-transform">
-                        {user?.name ? user.name.charAt(0) : 'D'}
+                    <div className="relative w-9 h-9 flex items-center justify-center">
+                        {/* Circling animation ring */}
+                        <div className="absolute inset-[-4px] rounded-full border border-dashed border-primary-500 opacity-0 group-hover:opacity-100 group-hover:animate-[spin_4s_linear_infinite] transition-opacity duration-300"></div>
+
+                        {/* Avatar */}
+                        <div className="relative w-full h-full rounded-full bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center border border-white/10 text-white font-bold shadow-neon-blue transition-transform duration-300 group-hover:scale-95">
+                            {user?.name ? user.name.charAt(0) : 'D'}
+                        </div>
                     </div>
                 </div>
             </div>
