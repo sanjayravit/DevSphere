@@ -146,8 +146,10 @@ export const Topbar = ({ onMenuClick }) => {
                         </div>
                     </div>
                     <div className="relative w-9 h-9 flex items-center justify-center">
-                        {/* Circling animation ring */}
-                        <div className="absolute inset-[-4px] rounded-full border border-dashed border-primary-500 opacity-0 group-hover:opacity-100 group-hover:animate-[spin_4s_linear_infinite] transition-opacity duration-300"></div>
+                        {/* HUD Cyberpunk Rings */}
+                        <div className="absolute inset-[-6px] rounded-full border border-primary-500/30 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                        <div className="absolute inset-[-6px] rounded-full border-2 border-transparent border-t-primary-400 border-b-primary-400 opacity-0 group-hover:opacity-100 group-hover:animate-[spin_3s_linear_infinite] shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-300 pointer-events-none"></div>
+                        <div className="absolute inset-[-2px] rounded-full border border-dashed border-primary-300 opacity-0 group-hover:opacity-100 group-hover:animate-[spin_4s_linear_infinite_reverse] transition-all duration-300 pointer-events-none"></div>
 
                         {/* Avatar */}
                         <div className="relative w-full h-full rounded-full bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center border border-white/10 text-white font-bold shadow-neon-blue transition-transform duration-300 group-hover:scale-95">
