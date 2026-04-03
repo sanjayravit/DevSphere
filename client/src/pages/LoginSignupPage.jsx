@@ -11,7 +11,9 @@ export const LoginSignupPage = () => {
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
     const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+    const [isGithubLoading, setIsGithubLoading] = useState(false);
     const { login, register, loginWithGoogle, loginWithGithub } = useAuth();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -42,7 +44,9 @@ export const LoginSignupPage = () => {
 
     const handleSocialLogin = async (provider) => {
         setError('');
-        setLoading(true);
+        if (provider === 'google') setIsGoogleLoading(true);
+        else setIsGithubLoading(true);
+
         try {
             if (provider === 'google') await loginWithGoogle();
             else await loginWithGithub();
@@ -50,7 +54,8 @@ export const LoginSignupPage = () => {
         } catch (err) {
             setError(getErrorMessage(err));
         } finally {
-            setLoading(false);
+            setIsGoogleLoading(false);
+            setIsGithubLoading(false);
         }
     };
 
@@ -63,7 +68,7 @@ export const LoginSignupPage = () => {
             return;
         }
 
-        setLoading(true);
+        setIsSubmitting(true);
         try {
             if (isLogin) {
                 await login(formData.email, formData.password);
@@ -74,7 +79,7 @@ export const LoginSignupPage = () => {
         } catch (err) {
             setError(getErrorMessage(err));
         } finally {
-            setLoading(false);
+            setIsSubmitting(false);
         }
     };
 
@@ -156,7 +161,7 @@ export const LoginSignupPage = () => {
                     <Button
                         type="submit"
                         className="w-full mt-6"
-                        isLoading={loading}
+                        isLoading={isSubmitting}
                     >
                         {isLogin ? 'Sign In' : 'Sign Up'}
                     </Button>
@@ -176,7 +181,7 @@ export const LoginSignupPage = () => {
                         variant="secondary"
                         onClick={() => handleSocialLogin('google')}
                         className="flex-1 bg-white text-dark-900 hover:bg-gray-100 border-none flex items-center justify-center gap-2"
-                        isLoading={loading}
+                        isLoading={isGoogleLoading}
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
                             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -190,7 +195,7 @@ export const LoginSignupPage = () => {
                         variant="secondary"
                         onClick={() => handleSocialLogin('github')}
                         className="flex-1 bg-[#24292e] text-white hover:bg-[#2f363d] border-white/10 flex items-center justify-center gap-2"
-                        isLoading={loading}
+                        isLoading={isGithubLoading}
                     >
                         <Github size={18} /> GitHub
                     </Button>
