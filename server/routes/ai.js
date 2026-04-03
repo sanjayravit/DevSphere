@@ -24,12 +24,12 @@ const pdfParse = require("pdf-parse");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key_to_prevent_crash");
 
 const analyzeResumeWithGemini = async (text) => {
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "dummy_key_to_prevent_crash" || process.env.GEMINI_API_KEY === "your_actual_api_key_here") {
         throw new Error("GEMINI_API_KEY is missing. Please add it to your server/.env file.");
     }
 
     const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         generationConfig: { responseMimeType: "application/json" }
     });
 
@@ -94,7 +94,7 @@ router.post("/resume", async (req, res) => {
 router.post("/copilot", auth, async (req, res) => {
     const { action, code, projectId, message, targetLanguage } = req.body;
 
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "dummy_key_to_prevent_crash") {
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "dummy_key_to_prevent_crash" || process.env.GEMINI_API_KEY === "your_actual_api_key_here") {
         return res.status(500).json({ error: "Configuration Error: GEMINI_API_KEY is missing in server/.env" });
     }
 
@@ -118,7 +118,7 @@ router.post("/copilot", auth, async (req, res) => {
             }));
         }
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let instruction = "";
         if (action === "explain") {
