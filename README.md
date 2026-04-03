@@ -5,7 +5,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-Active%20Development-blueviolet?style=for-the-badge"/>
-  <img src="https://img.shields.io/badge/Version-1.0.0-black?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Version-1.5.0-black?style=for-the-badge"/>
   <img src="https://img.shields.io/badge/AI-Powered-cyan?style=for-the-badge"/>
   <img src="https://img.shields.io/badge/FullStack-Platform-green?style=for-the-badge"/>
 </p>
