@@ -37,10 +37,10 @@ export const ProfilePage = () => {
     };
 
     return (
-        <div className="space-y-8 max-w-5xl mx-auto">
+        <div className="space-y-8 max-w-5xl mx-auto px-4">
             <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-3xl font-display font-bold text-white mb-2">GitHub Profile Import</h1>
+                    <h1 className="text-2xl md:text-3xl font-display font-bold text-white mb-2">GitHub Profile Import</h1>
                     <p className="text-gray-400">Connect your GitHub to showcase your portfolio and stats.</p>
                 </div>
 

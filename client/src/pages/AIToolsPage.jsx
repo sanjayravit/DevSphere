@@ -78,13 +78,13 @@ export const AIToolsPage = () => {
     };
 
     return (
-        <div className="max-w-6xl mx-auto space-y-8">
+        <div className="max-w-6xl mx-auto space-y-8 px-4">
             <div className="mb-8">
-                <h1 className="text-3xl font-display font-bold text-white mb-2 flex items-center gap-3">
+                <h1 className="text-2xl md:text-3xl font-display font-bold text-white mb-2 flex items-center gap-3">
                     <Sparkles className="text-accent-purple" />
                     AI Resume Analyzer
                 </h1>
-                <p className="text-gray-400">Get instant AI-driven feedback on your resume to increase your interview chances.</p>
+                <p className="text-gray-400 text-sm md:text-base">Get instant AI-driven feedback on your resume to increase your interview chances.</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -99,7 +99,7 @@ export const AIToolsPage = () => {
 
                             {/* Drag and Drop Zone */}
                             <div
-                                className={`mb-4 w-full rounded-2xl border-2 border-dashed p-6 text-center transition-all duration-300 ${isDragging ? 'border-primary-500 bg-primary-500/10 scale-[1.02]' : selectedFile ? 'border-green-500/50 bg-green-500/5' : 'border-white/10 hover:border-primary-500/30 bg-dark-900/50'} relative cursor-pointer`}
+                                className={`mb-4 w-full rounded-2xl border-2 border-dashed p-4 md:p-6 text-center transition-all duration-300 ${isDragging ? 'border-primary-500 bg-primary-500/10 scale-[1.02]' : selectedFile ? 'border-green-500/50 bg-green-500/5' : 'border-white/10 hover:border-primary-500/30 bg-dark-900/50'} relative cursor-pointer`}
                                 onDragOver={handleDragOver}
                                 onDragLeave={handleDragLeave}
                                 onDrop={handleDrop}
@@ -110,12 +110,12 @@ export const AIToolsPage = () => {
                                 {selectedFile ? (
                                     <div className="flex items-center justify-between bg-dark-800 p-3 rounded-xl border border-white/5 shadow-lg" onClick={(e) => e.stopPropagation()}>
                                         <div className="flex items-center gap-3">
-                                            <div className="w-12 h-12 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 shadow-[inset_0_0_10px_rgba(99,102,241,0.2)]">
+                                            <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 shadow-[inset_0_0_10px_rgba(99,102,241,0.2)]">
                                                 <File size={22} />
                                             </div>
                                             <div className="text-left">
-                                                <p className="text-sm font-bold text-white truncate max-w-[200px]">{selectedFile.name}</p>
-                                                <p className="text-xs text-gray-400 font-medium">Local Document • {(selectedFile.size / 1024).toFixed(1)} KB</p>
+                                                <p className="text-sm font-bold text-white truncate max-w-[150px] md:max-w-[200px]">{selectedFile.name}</p>
+                                                <p className="text-[10px] md:text-xs text-gray-400 font-medium">Local Document • {(selectedFile.size / 1024).toFixed(1)} KB</p>
                                             </div>
                                         </div>
                                         <button type="button" onClick={() => setSelectedFile(null)} className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/20 rounded-lg transition-colors">
@@ -124,18 +124,18 @@ export const AIToolsPage = () => {
                                     </div>
                                 ) : (
                                     <div className="flex flex-col items-center justify-center gap-3 py-2">
-                                        <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center text-gray-400 mb-1 group hover:bg-white/10 transition-colors">
-                                            <Upload size={26} className="text-primary-400" />
+                                        <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/5 flex items-center justify-center text-gray-400 mb-1 group hover:bg-white/10 transition-colors">
+                                            <Upload size={22} className="text-primary-400" />
                                         </div>
-                                        <p className="text-sm font-semibold text-white">Click to upload or drag and drop</p>
-                                        <p className="text-xs text-gray-500 font-medium tracking-wide">PDF or TXT (Max 5MB)</p>
+                                        <p className="text-sm font-semibold text-white">Upload or drag & drop</p>
+                                        <p className="text-[10px] md:text-xs text-gray-500 font-medium tracking-wide">PDF or TXT (Max 5MB)</p>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="relative flex items-center py-5">
+                            <div className="relative flex items-center py-4 md:py-5">
                                 <div className="flex-grow border-t border-white/5"></div>
-                                <span className="flex-shrink-0 mx-4 text-gray-600 text-[10px] font-bold uppercase tracking-widest">Or Paste Text</span>
+                                <span className="flex-shrink-0 mx-4 text-gray-600 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Or Paste Text</span>
                                 <div className="flex-grow border-t border-white/5"></div>
                             </div>
 
@@ -145,8 +145,8 @@ export const AIToolsPage = () => {
                                     setResumeText(e.target.value);
                                     if (selectedFile && e.target.value.trim().length > 0) setSelectedFile(null); // Deselect file if they start typing
                                 }}
-                                placeholder="Paste your plain text resume here (experiences, skills, education)…"
-                                className="w-full h-48 bg-dark-900/50 border border-white/10 rounded-xl p-4 text-white placeholder:text-gray-500 focus:outline-none focus:border-primary-500 transition-colors custom-scrollbar resize-none font-sans text-sm leading-relaxed"
+                                placeholder="Paste your plain text resume here…"
+                                className="w-full h-40 md:h-48 bg-dark-900/50 border border-white/10 rounded-xl p-4 text-white placeholder:text-gray-500 focus:outline-none focus:border-primary-500 transition-colors custom-scrollbar resize-none font-sans text-sm leading-relaxed"
                             />
                         </div>
 
@@ -156,27 +156,27 @@ export const AIToolsPage = () => {
                             isLoading={isAnalyzing}
                             disabled={(!resumeText.trim() && !selectedFile)}
                         >
-                            <Sparkles size={18} /> {isAnalyzing ? 'Initializing Deep Scan…' : 'Analyze Resume'}
+                            <Sparkles size={18} /> {isAnalyzing ? 'Analyzing…' : 'Analyze Resume'}
                         </Button>
                     </form>
                 </AnimatedCard>
 
                 {/* Results Area */}
-                <div className="lg:col-span-1 border-l border-white/5 pl-0 lg:pl-10 flex flex-col items-center justify-center">
+                <div className="lg:col-span-1 border-white/5 pl-0 lg:pl-10 flex flex-col items-center justify-center pt-8 lg:pt-0">
                     <AnimatePresence mode="wait">
                         {isAnalyzing && (
                             <motion.div
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
-                                className="h-full flex flex-col items-center justify-center text-center p-12 glass-panel border border-primary-500/20 shadow-[inset_0_0_50px_rgba(99,102,241,0.05)]"
+                                className="h-full w-full flex flex-col items-center justify-center text-center p-8 md:p-12 glass-panel border border-primary-500/20 shadow-[inset_0_0_50px_rgba(99,102,241,0.05)]"
                             >
                                 <div className="relative mb-8">
-                                    <div className="w-20 h-20 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
-                                    <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary-400" />
+                                    <div className="w-16 h-16 md:w-20 md:h-20 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
+                                    <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary-400" size={18} />
                                 </div>
                                 <h3 className="text-xl font-medium text-white mb-2">AI is reading…</h3>
-                                <p className="text-primary-400/80 animate-pulse">Running advanced heuristics and parsing experience.</p>
+                                <p className="text-primary-400/80 animate-pulse text-sm">Running advanced heuristics...</p>
                             </motion.div>
                         )}
 
@@ -184,13 +184,23 @@ export const AIToolsPage = () => {
                             <motion.div
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
-                                className="space-y-6"
+                                className="space-y-6 w-full"
                             >
                                 {/* Score Card */}
-                                <AnimatedCard delay={0.1} className="flex items-center gap-8 bg-gradient-to-br from-dark-800 to-dark-900 border-primary-500/30 shadow-neon-blue">
+                                <AnimatedCard delay={0.1} className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8 bg-gradient-to-br from-dark-800 to-dark-900 border-primary-500/30 shadow-neon-blue p-6">
                                     <div className="relative shrink-0">
-                                        <svg className="w-24 h-24 transform -rotate-90">
-                                            <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-dark-700" />
+                                        <svg className="w-20 h-20 md:w-24 md:h-24 transform -rotate-90">
+                                            <circle cx="40" cy="40" r="32" stroke="currentColor" strokeWidth="6" fill="transparent" className="text-dark-700 md:hidden" />
+                                            <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-dark-700 hidden md:block" />
+                                            <circle
+                                                cx="40" cy="40" r="32"
+                                                stroke="currentColor"
+                                                strokeWidth="6"
+                                                fill="transparent"
+                                                strokeDasharray={32 * 2 * Math.PI}
+                                                strokeDashoffset={32 * 2 * Math.PI - (results.score / 100) * 32 * 2 * Math.PI}
+                                                className={`md:hidden ${results.score > 80 ? "text-green-500" : "text-yellow-500"}`}
+                                            />
                                             <circle
                                                 cx="48" cy="48" r="40"
                                                 stroke="currentColor"
@@ -198,16 +208,16 @@ export const AIToolsPage = () => {
                                                 fill="transparent"
                                                 strokeDasharray={40 * 2 * Math.PI}
                                                 strokeDashoffset={40 * 2 * Math.PI - (results.score / 100) * 40 * 2 * Math.PI}
-                                                className={results.score > 80 ? "text-green-500" : "text-yellow-500"}
+                                                className={`hidden md:block ${results.score > 80 ? "text-green-500" : "text-yellow-500"}`}
                                             />
                                         </svg>
-                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-bold text-white">
+                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xl md:text-2xl font-bold text-white">
                                             {results.score}
                                         </div>
                                     </div>
-                                    <div>
-                                        <h3 className="text-2xl font-bold text-white mb-1">ATS Match Score</h3>
-                                        <p className="text-gray-400 text-sm">Based on standard tech industry filtering.</p>
+                                    <div className="text-center sm:text-left">
+                                        <h3 className="text-xl md:text-2xl font-bold text-white mb-1">ATS Match Score</h3>
+                                        <p className="text-gray-400 text-xs md:text-sm">Based on standard tech industry filtering.</p>
                                     </div>
                                 </AnimatedCard>
 

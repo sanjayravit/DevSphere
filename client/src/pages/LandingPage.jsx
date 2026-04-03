@@ -40,7 +40,7 @@ export const LandingPage = () => {
             </nav>
 
             {/* Breathtaking Hero Section */}
-            <main className="relative z-10 flex flex-col items-center justify-center px-6 pt-48 pb-32 text-center max-w-7xl mx-auto min-h-screen">
+            <main className="relative z-10 flex flex-col items-center justify-center px-6 pt-32 md:pt-48 pb-32 text-center max-w-7xl mx-auto min-h-screen">
 
                 {/* Floating Mockups Background Layer */}
                 <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 hidden lg:block">

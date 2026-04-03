@@ -62,14 +62,14 @@ export const MarketplacePage = () => {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto min-h-screen">
-            <div className="flex items-center justify-between mb-12">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-screen">
+            <div className="flex items-center justify-between mb-8 md:mb-12">
                 <div>
-                    <h1 className="text-4xl font-display font-bold text-white mb-2 relative inline-block">
+                    <h1 className="text-2xl md:text-4xl font-display font-bold text-white mb-2 relative inline-block">
                         DevSphere Marketplace
                         <div className="absolute -inset-1 bg-gradient-to-r from-accent-purple/20 to-primary-500/20 blur-lg -z-10 rounded-full" />
                     </h1>
-                    <p className="text-gray-400 text-lg">Browse curated templates, advanced AI prompts, and component snippets.</p>
+                    <p className="text-gray-400 text-base md:text-lg">Browse curated templates, advanced AI prompts, and component snippets.</p>
                 </div>
             </div>
 

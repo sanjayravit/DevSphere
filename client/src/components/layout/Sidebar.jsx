@@ -15,15 +15,16 @@ import {
     Settings,
     PackageOpen,
     Layers,
-    Type
+    Type,
+    X // Added X icon
 } from 'lucide-react';
 import { cn, Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 
-const NavItem = ({ to, icon: Icon, label }) => {
+const NavItem = ({ to, icon: Icon, label, onClick }) => {
     return (
-        <NavLink to={to}>
+        <NavLink to={to} onClick={onClick}>
             {({ isActive }) => (
                 <div className={cn(
                     "flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 font-medium relative overflow-hidden group",
@@ -40,7 +41,7 @@ const NavItem = ({ to, icon: Icon, label }) => {
     );
 };
 
-export const Sidebar = () => {
+export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     const { logout, user } = useAuth();
     const { workspaces, activeWorkspace, projects, changeWorkspace, createWorkspace, createProject } = useWorkspace();
     const navigate = useNavigate();
@@ -69,7 +70,10 @@ export const Sidebar = () => {
                 setCreateProjectModalOpen(false);
                 setNewProjectName("");
                 setGenerateWithAI(false);
-                if (project) navigate(`/editor/${project.id}`);
+                if (project) {
+                    navigate(`/editor/${project.id}`);
+                    if (setMobileOpen) setMobileOpen(false);
+                }
             } catch (err) {
                 console.error("Create project error:", err);
             } finally {
@@ -87,8 +91,22 @@ export const Sidebar = () => {
         }
     };
 
+    const closeMobile = () => {
+        if (setMobileOpen) setMobileOpen(false);
+    };
+
     return (
-        <div className="w-64 h-screen fixed left-0 top-0 border-r border-white/5 bg-dark-900/50 backdrop-blur-xl flex flex-col pt-6 pb-6 px-4 z-40 custom-scrollbar overflow-y-auto">
+        <div className={cn(
+            "w-64 h-screen fixed left-0 top-0 border-r border-white/5 bg-dark-900/50 backdrop-blur-xl flex flex-col pt-6 pb-6 px-4 z-40 custom-scrollbar overflow-y-auto transition-transform duration-300 ease-in-out lg:translate-x-0",
+            mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}>
+            {/* Mobile Close Button */}
+            <button
+                onClick={closeMobile}
+                className="lg:hidden absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors"
+            >
+                <X size={20} />
+            </button>
 
             {/* Workspace Selector */}
             <div className="mb-6 relative shrink-0">
@@ -132,11 +150,11 @@ export const Sidebar = () => {
             {/* Global Navigation */}
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3 pl-2 shrink-0">Navigation</div>
             <nav className="space-y-1 mb-8 shrink-0">
-                <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" />
-                <NavItem to="/marketplace" icon={PackageOpen} label="Marketplace" />
-                <NavItem to="/feed" icon={MessageSquare} label="Social Feed" />
-                <NavItem to="/ai-tools" icon={BrainCircuit} label="AI Tools" />
-                <NavItem to="/profile" icon={Github} label="My Profile" />
+                <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" onClick={closeMobile} />
+                <NavItem to="/marketplace" icon={PackageOpen} label="Marketplace" onClick={closeMobile} />
+                <NavItem to="/feed" icon={MessageSquare} label="Social Feed" onClick={closeMobile} />
+                <NavItem to="/ai-tools" icon={BrainCircuit} label="AI Tools" onClick={closeMobile} />
+                <NavItem to="/profile" icon={Github} label="My Profile" onClick={closeMobile} />
             </nav>
 
             {/* Workspace Projects List */}
@@ -148,7 +166,7 @@ export const Sidebar = () => {
             </div>
             <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar mb-6 min-h-[100px]">
                 {projects.map(p => (
-                    <NavItem key={p.id} to={`/editor/${p.id}`} icon={FolderDot} label={p.name} />
+                    <NavItem key={p.id} to={`/editor/${p.id}`} icon={FolderDot} label={p.name} onClick={closeMobile} />
                 ))}
                 {projects.length === 0 && (
                     <div className="text-sm text-gray-600 px-4 py-2 italic text-center mt-4">No projects yet</div>

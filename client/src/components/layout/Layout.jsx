@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export const Layout = () => {
     const { user, loading } = useAuth();
-    const location = useLocation();
+    const [isSidebarOpen, setSidebarOpen] = React.useState(false);
 
     if (loading) {
         return (
@@ -30,14 +30,27 @@ export const Layout = () => {
             <div className="fixed top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-primary-500/10 blur-[150px] animate-blob pointer-events-none z-0" />
             <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-accent-purple/10 blur-[150px] animate-blob animation-delay-4000 pointer-events-none z-0" />
 
-            {/* Sidebar (Fixed Width) */}
-            <Sidebar />
+            {/* Sidebar (Responsive) */}
+            <Sidebar mobileOpen={isSidebarOpen} setMobileOpen={setSidebarOpen} />
+
+            {/* Backdrop for mobile */}
+            <AnimatePresence>
+                {isSidebarOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSidebarOpen(false)}
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+                    />
+                )}
+            </AnimatePresence>
 
             {/* Main Content Area */}
-            <div className="flex-1 flex flex-col min-w-0 h-screen ml-64 overflow-hidden">
-                <Topbar />
+            <div className="flex-1 flex flex-col min-w-0 h-screen lg:ml-64 overflow-hidden relative">
+                <Topbar onMenuClick={() => setSidebarOpen(true)} />
 
-                <main className="flex-1 p-8 overflow-y-auto custom-scrollbar relative z-10 bg-dark-900/40">
+                <main className="flex-1 p-4 md:p-8 overflow-y-auto custom-scrollbar relative z-10 bg-dark-900/40">
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={location.pathname}

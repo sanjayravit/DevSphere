@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Bell, Command, ChevronDown, User, Settings, LogOut, Sparkles, GitCommit, Code2, Zap, MessageSquare } from 'lucide-react';
+import { Search, Bell, Command, ChevronDown, User, Settings, LogOut, Sparkles, GitCommit, Code2, Zap, MessageSquare, Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 
@@ -10,7 +10,7 @@ const MOCK_NOTIFICATIONS = [
     { id: 4, type: 'system', icon: Zap, title: 'Build succeeded — 0 warnings', time: '3 hr ago', unread: false },
 ];
 
-export const Topbar = () => {
+export const Topbar = ({ onMenuClick }) => {
     const { user, logout } = useAuth();
     const { activeWorkspace } = useWorkspace();
     const [showNotifications, setShowNotifications] = useState(false);
@@ -30,9 +30,17 @@ export const Topbar = () => {
     }, []);
 
     return (
-        <header className="h-16 border-b border-white/5 bg-dark-900/40 backdrop-blur-xl flex items-center justify-between px-8 sticky top-0 z-30">
+        <header className="h-16 border-b border-white/5 bg-dark-900/40 backdrop-blur-xl flex items-center justify-between px-4 md:px-8 sticky top-0 z-30">
+            {/* Mobile Menu Toggle */}
+            <button
+                onClick={onMenuClick}
+                className="lg:hidden p-2 -ml-2 text-gray-400 hover:text-white transition-colors"
+            >
+                <Menu size={24} />
+            </button>
+
             {/* Breadcrumbs & Active Info */}
-            <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-4 text-sm hidden sm:flex">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-gray-400">
                     <span className="text-gray-500">Workspace</span>
                     <span className="text-white font-medium">{activeWorkspace?.name || '...'}</span>
@@ -40,17 +48,17 @@ export const Topbar = () => {
             </div>
 
             {/* Search Bar */}
-            <div className="flex-1 max-w-xl px-8">
+            <div className="flex-1 max-w-xl px-4 md:px-8 hidden xs:block">
                 <div className="relative group">
                     <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-gray-500 group-focus-within:text-primary-400 transition-colors">
                         <Search size={18} />
                     </div>
                     <input
                         type="text"
-                        placeholder="Search anything... (⌘ K)"
+                        placeholder="Search... (⌘ K)"
                         className="w-full bg-dark-800/50 border border-white/5 rounded-xl pl-11 pr-12 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500/50 transition-all"
                     />
-                    <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
+                    <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none hidden md:flex">
                         <div className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-gray-500 font-mono">
                             <Command size={10} />
                             <span>K</span>
@@ -78,8 +86,8 @@ export const Topbar = () => {
                     {/* Notification Dropdown */}
                     <div
                         className={`absolute right-0 top-14 w-80 bg-dark-800/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 origin-top-right ${showNotifications
-                                ? 'opacity-100 scale-100 translate-y-0'
-                                : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+                            ? 'opacity-100 scale-100 translate-y-0'
+                            : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
                             }`}
                     >
                         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">

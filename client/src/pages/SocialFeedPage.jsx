@@ -185,7 +185,7 @@ export const SocialFeedPage = () => {
     };
 
     return (
-        <div className="max-w-4xl mx-auto space-y-12 pb-24 pt-4 px-4">
+        <div className="max-w-4xl mx-auto space-y-8 md:space-y-12 pb-24 pt-2 md:pt-4 px-4">
             <header className="space-y-2">
                 <motion.div
                     initial={{ opacity: 0, x: -20 }}
@@ -195,13 +195,13 @@ export const SocialFeedPage = () => {
                     <div className="p-2 bg-primary-500/10 rounded-lg">
                         <Sparkles className="text-primary-400" size={24} />
                     </div>
-                    <h1 className="text-4xl font-display font-bold text-white tracking-tight">Developer Feed</h1>
+                    <h1 className="text-2xl md:text-4xl font-display font-bold text-white tracking-tight">Developer Feed</h1>
                 </motion.div>
                 <motion.p
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.1 }}
-                    className="text-gray-400 text-lg font-inter"
+                    className="text-gray-400 text-base md:text-lg font-inter"
                 >
                     Connect, collaborate, and share your latest builds.
                 </motion.p>
@@ -212,18 +212,18 @@ export const SocialFeedPage = () => {
                 {/* Premium Border Beam Animation */}
                 <BorderBeam />
 
-                <div className="relative z-10 bg-[#0a0a0f]/90 backdrop-blur-3xl p-8 rounded-[inherit] space-y-6 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+                <div className="relative z-10 bg-[#0a0a0f]/90 backdrop-blur-3xl p-4 md:p-8 rounded-[inherit] space-y-6 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
                     <form onSubmit={handleCreatePost} className="space-y-6">
-                        <div className="flex gap-5">
+                        <div className="flex gap-3 md:gap-5">
                             <div className="relative shrink-0">
-                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center text-white font-bold uppercase overflow-hidden shadow-lg shadow-primary-500/20">
+                                <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center text-white font-bold uppercase overflow-hidden shadow-lg shadow-primary-500/20">
                                     {user?.avatar ? (
                                         <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
                                     ) : (
                                         user?.name?.[0] || 'D'
                                     )}
                                 </div>
-                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-dark-900 rounded-full" />
+                                <div className="absolute -bottom-1 -right-1 w-3 h-3 md:w-4 md:h-4 bg-green-500 border-2 border-dark-900 rounded-full" />
                             </div>
                             <div className="flex-1">
                                 <textarea
@@ -231,7 +231,7 @@ export const SocialFeedPage = () => {
                                     value={newPost}
                                     onChange={(e) => setNewPost(e.target.value)}
                                     placeholder="What's your latest innovation?"
-                                    className="w-full bg-transparent border-none focus:ring-0 text-white placeholder:text-gray-500/50 resize-none min-h-[40px] text-xl leading-relaxed py-2 custom-scrollbar transition-all font-inter"
+                                    className="w-full bg-transparent border-none focus:ring-0 text-white placeholder:text-gray-500/50 resize-none min-h-[40px] text-lg md:text-xl leading-relaxed py-2 custom-scrollbar transition-all font-inter"
                                     rows="1"
                                     style={{ boxShadow: 'none', border: 'none', outline: 'none' }}
                                 />
@@ -342,7 +342,7 @@ export const SocialFeedPage = () => {
                                 layout
                             >
                                 <AnimatedCard
-                                    className="group hover:border-primary-500/30 hover:bg-dark-900/50 hover:shadow-2xl hover:shadow-primary-500/5 transition-all duration-200 p-8 border-white/5 relative overflow-hidden"
+                                    className="group hover:border-primary-500/30 hover:bg-dark-900/50 hover:shadow-2xl hover:shadow-primary-500/5 transition-all duration-200 p-4 md:p-8 border-white/5 relative overflow-hidden"
                                 >
                                     {/* Glass Highlight */}
                                     <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 blur-[80px] -mr-16 -mt-16 group-hover:bg-primary-500/10 transition-colors" />

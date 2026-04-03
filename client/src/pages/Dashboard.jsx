@@ -43,7 +43,7 @@ export const Dashboard = () => {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-display font-bold text-white mb-2">
+                    <h1 className="text-2xl md:text-3xl font-display font-bold text-white mb-2">
                         Welcome back, <span className="text-gradient">{user?.name?.split(' ')[0] || 'Developer'}</span>
                     </h1>
                     <p className="text-gray-400">Here's what's happening in <span className="text-primary-400 font-semibold">{activeWorkspace?.name || 'your workspace'}</span> today.</p>
