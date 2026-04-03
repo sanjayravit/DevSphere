@@ -147,18 +147,31 @@ router.post("/copilot", auth, async (req, res) => {
         const finalPrompt = `${instruction} \n\nCode State: \n${code} `;
 
         // Feed historical persistence arrays into Gemini
-        const chat = model.startChat({ history });
+        let responseText = "";
 
-        const result = await chat.sendMessage([{ text: finalPrompt }]);
-        const responseText = result.response.text();
+        if (action === "chat" || action === "project-query") {
+            const chat = model.startChat({ history });
+            const result = await chat.sendMessage([{ text: finalPrompt }]);
+            responseText = result.response.text();
+        } else {
+            const result = await model.generateContent(finalPrompt);
+            responseText = result.response.text();
+        }
 
-        // Record backend interaction layer in the DB memory arrays
-        if (project) {
-            const chatHistory = project.chatHistory || [];
+        // Record backend interaction layer in the DB memory arrays only for chat actions
+        if (project && (action === "chat" || action === "project-query")) {
+            let chatHistory = project.chatHistory || [];
             chatHistory.push(
                 { role: 'user', content: finalPrompt, timestamp: new Date() },
                 { role: 'model', content: responseText, timestamp: new Date() }
             );
+
+            // Cap history to last 50 messages to prevent Firestore payload size issues
+            if (chatHistory.length > 50) {
+                chatHistory = chatHistory.slice(chatHistory.length - 50);
+            }
+
+            // Only save if it's less than 1MB intuitively, but slicing to 50 should be safe.
             await Project.save(projectId, { ...project, chatHistory });
         }
 
