@@ -29,12 +29,22 @@ const io = new Server(server, {
     }
 });
 
+const roomUsers = {}; // roomId -> Array of { socketId, user }
+
 io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
     // Join a specific project room
     socket.on("join-room", ({ roomId, user }) => {
         socket.join(roomId);
+
+        // Track user for accurate presence
+        if (!roomUsers[roomId]) roomUsers[roomId] = [];
+        const existingIdx = roomUsers[roomId].findIndex(u => u.socketId === socket.id);
+        if (existingIdx !== -1) roomUsers[roomId].splice(existingIdx, 1);
+        roomUsers[roomId].push({ socketId: socket.id, user });
+
+        io.to(roomId).emit("room-users-update", roomUsers[roomId]);
         socket.to(roomId).emit("user-joined", { socketId: socket.id, user });
         console.log(`User ${user?.name || socket.id} joined room ${roomId}`);
     });
@@ -60,9 +70,18 @@ io.on("connection", (socket) => {
     });
 
     socket.on("disconnect", () => {
-        // Find rooms the user was in and notify others (simplified here)
-        // Usually, you'd track users per room for more precise 'user-left' events
-        io.emit("user-left", socket.id);
+        // Remove user from any rooms they were tracking
+        for (const roomId in roomUsers) {
+            const index = roomUsers[roomId].findIndex(u => u.socketId === socket.id);
+            if (index !== -1) {
+                roomUsers[roomId].splice(index, 1);
+                io.to(roomId).emit("room-users-update", roomUsers[roomId]);
+                io.to(roomId).emit("user-left", socket.id);
+            }
+            if (roomUsers[roomId].length === 0) {
+                delete roomUsers[roomId];
+            }
+        }
         console.log("User disconnected:", socket.id);
     });
 });

@@ -7,6 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send, Save, FileCode, GitCommit, GitBranch, Code2, Trash2, Loader2, Plus, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useParams } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 
 function useLatest(value) {
     const ref = useRef(value);
@@ -137,9 +138,11 @@ export const CodeEditorPage = () => {
     const [commitMessage, setCommitMessage] = useState('');
     const [isCommitting, setIsCommitting] = useState(false);
 
-    // Collaboration state
+    // Collaboration & UI state
     const { user } = useAuth();
     const [messages, setMessages] = useState([]);
+    const [roomUsers, setRoomUsers] = useState([]);
+    const [isTerminalVisible, setIsTerminalVisible] = useState(false);
     const [chatInput, setChatInput] = useState('');
     const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'ai', 'git'
     const [targetLanguage, setTargetLanguage] = useState('python');
@@ -152,6 +155,18 @@ export const CodeEditorPage = () => {
     const monacoRef = useRef(null);
     const latestUser = useLatest(user);
     const completionsDisposableRef = useRef(null); // Track inline completions registration to avoid stale closures
+    const emitCodeChange = useRef(null);
+
+    // Initial setup of debounce function
+    useEffect(() => {
+        let timeout;
+        emitCodeChange.current = (roomId, value, index) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => {
+                if (socket) socket.emit('code-change', { roomId, code: { code: value, fileIndex: index } });
+            }, 300);
+        };
+    }, []);
 
     // Initial project schema fetching
     useEffect(() => {
@@ -210,6 +225,10 @@ export const CodeEditorPage = () => {
             setMessages(prev => [...prev, { system: true, text: `${joinedUser?.name || 'A user'} joined the workspace.` }]);
         });
 
+        socket.on('room-users-update', (users) => {
+            setRoomUsers(users);
+        });
+
         socket.on('user-left', (socketId) => {
             removeCursor(socketId);
         });
@@ -227,6 +246,7 @@ export const CodeEditorPage = () => {
             socket.off('code-update');
             socket.off('chat-update');
             socket.off('user-joined');
+            socket.off('room-users-update');
             socket.off('user-left');
             socket.off('cursor-update');
             socket.off('ai-update');
@@ -368,7 +388,9 @@ export const CodeEditorPage = () => {
 
     const handleEditorChange = (value) => {
         setCode(value);
-        if (socket) socket.emit('code-change', { roomId: projectId, code: { code: value, fileIndex: activeFileIndex } });
+        if (emitCodeChange.current) {
+            emitCodeChange.current(projectId, value, activeFileIndex);
+        }
 
         setFiles(prev => {
             const next = [...prev];
@@ -517,6 +539,7 @@ export const CodeEditorPage = () => {
 
     const executeCode = async () => {
         setIsRunning(true);
+        setIsTerminalVisible(true);
         try {
             const res = await api.post('/code/run', {
                 code,
@@ -722,7 +745,14 @@ export const CodeEditorPage = () => {
                         <p className="text-sm text-gray-400">Collaborative Workspace • {files.length} File(s)</p>
                     </div>
                     <div className="flex gap-4 items-center">
-                        <Button variant="secondary" onClick={handleSave} isLoading={isSaving} className="gap-2 border-white/10 hover:border-primary-500/50 bg-dark-800">
+                        <div className="flex -space-x-2 mr-2">
+                            {roomUsers.map((u, i) => (
+                                <div key={u.socketId || i} className="w-8 h-8 rounded-full border-2 border-dark-900 bg-primary-500/20 text-primary-400 flex items-center justify-center text-xs font-bold uppercase shadow-sm" title={u.user?.name || 'Anonymous'}>
+                                    {(u.user?.name || 'A').charAt(0)}
+                                </div>
+                            ))}
+                        </div>
+                        <Button variant="secondary" onClick={handleSave} isLoading={isSaving} className="gap-2 border-white/10 hover:border-primary-500/50 bg-dark-800 hidden sm:flex">
                             <Save size={16} className={isSaving ? 'animate-pulse' : ''} /> Save to Cloud
                         </Button>
                         <select
@@ -734,6 +764,9 @@ export const CodeEditorPage = () => {
                                 <option key={key} value={key} className="bg-dark-900 text-white">{lang.name}</option>
                             ))}
                         </select>
+                        <Button variant="secondary" onClick={() => setIsTerminalVisible(prev => !prev)} className={`gap-2 border-white/10 bg-dark-800 p-2 sm:px-4 sm:py-2.5 ${isTerminalVisible ? 'border-primary-500/50 text-primary-400' : 'hover:border-primary-500/50'}`} title="Toggle Terminal">
+                            <TerminalSquare size={16} /> <span className="hidden sm:inline">Terminal</span>
+                        </Button>
                         <Button onClick={executeCode} isLoading={isRunning} className="gap-2 bg-green-500 hover:bg-green-600 text-white shadow-none">
                             <Play size={16} /> Run Code
                         </Button>
@@ -832,50 +865,62 @@ export const CodeEditorPage = () => {
                 </AnimatedCard>
 
                 {/* Output Console — Premium Terminal */}
-                <AnimatedCard className="h-56 bg-[#0a0a0f] text-green-400 font-mono text-sm flex flex-col border border-white/5 rounded-xl overflow-hidden">
-                    {/* Terminal Header */}
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-dark-800/80 border-b border-white/5 shrink-0">
-                        <div className="flex items-center gap-3">
-                            <div className="flex gap-1.5">
-                                <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                                <div className="w-3 h-3 rounded-full bg-green-500/80" />
-                            </div>
-                            <div className="text-gray-500 text-xs uppercase tracking-widest flex items-center gap-2">
-                                <TerminalSquare size={12} className="text-gray-500" />
-                                {isRunning ? (
-                                    <span className="flex items-center gap-1.5 text-primary-400">
-                                        <Loader2 size={12} className="animate-spin" /> Running…
-                                    </span>
-                                ) : (
-                                    <span>Terminal</span>
-                                )}
-                            </div>
-                        </div>
-                        {output && (
-                            <button
-                                onClick={() => setOutput('')}
-                                className="flex items-center gap-1.5 text-gray-500 hover:text-red-400 text-xs transition-colors px-2 py-1 rounded-md hover:bg-white/5"
-                                title="Clear output"
-                            >
-                                <Trash2 size={12} /> Clear
-                            </button>
-                        )}
-                    </div>
-                    {/* Terminal Body */}
-                    <div ref={outputRef} className="flex-1 overflow-y-auto custom-scrollbar p-4">
-                        {isRunning && !output ? (
-                            <div className="flex items-center gap-2 text-primary-400 text-xs animate-pulse">
-                                <Loader2 size={14} className="animate-spin" />
-                                <span>Compiling and executing your code…</span>
-                            </div>
-                        ) : output ? (
-                            <pre className="whitespace-pre-wrap text-green-400 leading-relaxed">{output}</pre>
-                        ) : (
-                            <div className="text-gray-600 text-xs italic">Click "Run Code" to see execution output here.</div>
-                        )}
-                    </div>
-                </AnimatedCard>
+                <AnimatePresence>
+                    {isTerminalVisible && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                            animate={{ height: 224, opacity: 1, marginTop: 16 }}
+                            exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                            transition={{ duration: 0.3, ease: 'easeInOut' }}
+                            className="overflow-hidden shrink-0"
+                        >
+                            <AnimatedCard className="h-full bg-[#0a0a0f] text-green-400 font-mono text-sm flex flex-col border border-white/5 rounded-xl overflow-hidden">
+                                {/* Terminal Header */}
+                                <div className="flex items-center justify-between px-4 py-2.5 bg-dark-800/80 border-b border-white/5 shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex gap-1.5">
+                                            <div className="w-3 h-3 rounded-full bg-red-500/80 cursor-pointer" onClick={() => setIsTerminalVisible(false)} title="Close Terminal" />
+                                            <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                                            <div className="w-3 h-3 rounded-full bg-green-500/80" />
+                                        </div>
+                                        <div className="text-gray-500 text-xs uppercase tracking-widest flex items-center gap-2">
+                                            <TerminalSquare size={12} className="text-gray-500" />
+                                            {isRunning ? (
+                                                <span className="flex items-center gap-1.5 text-primary-400">
+                                                    <Loader2 size={12} className="animate-spin" /> Running…
+                                                </span>
+                                            ) : (
+                                                <span>Terminal</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {output && (
+                                        <button
+                                            onClick={() => setOutput('')}
+                                            className="flex items-center gap-1.5 text-gray-500 hover:text-red-400 text-xs transition-colors px-2 py-1 rounded-md hover:bg-white/5"
+                                            title="Clear output"
+                                        >
+                                            <Trash2 size={12} /> Clear
+                                        </button>
+                                    )}
+                                </div>
+                                {/* Terminal Body */}
+                                <div ref={outputRef} className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                                    {isRunning && !output ? (
+                                        <div className="flex items-center gap-2 text-primary-400 text-xs animate-pulse">
+                                            <Loader2 size={14} className="animate-spin" />
+                                            <span>Compiling and executing your code…</span>
+                                        </div>
+                                    ) : output ? (
+                                        <pre className="whitespace-pre-wrap text-green-400 leading-relaxed">{output}</pre>
+                                    ) : (
+                                        <div className="text-gray-600 text-xs italic">Click "Run Code" to see execution output here.</div>
+                                    )}
+                                </div>
+                            </AnimatedCard>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
 
             {/* Sidebar */}
@@ -1055,7 +1100,7 @@ export const CodeEditorPage = () => {
                     </div>
                 )}
             </AnimatedCard>
-        </div>
+        </div >
     );
 };
 
