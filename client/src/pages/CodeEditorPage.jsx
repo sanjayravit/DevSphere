@@ -4,7 +4,7 @@ import socket from '../services/socket';
 import api from '../services/api';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send, Save, FileCode, GitCommit, GitBranch, Code2, Trash2, Loader2 } from 'lucide-react';
+import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send, Save, FileCode, GitCommit, GitBranch, Code2, Trash2, Loader2, Plus, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useParams } from 'react-router-dom';
 
@@ -19,7 +19,82 @@ const LANGUAGES = {
     python: { id: 71, name: 'Python', extension: 'py' },
     java: { id: 62, name: 'Java', extension: 'java' },
     cpp: { id: 54, name: 'C++', extension: 'cpp' },
-    c: { id: 50, name: 'C', extension: 'c' }
+    c: { id: 50, name: 'C', extension: 'c' },
+    html: { id: 0, name: 'HTML', extension: 'html' },
+    css: { id: 0, name: 'CSS', extension: 'css' },
+    typescript: { id: 74, name: 'TypeScript', extension: 'ts' },
+    rust: { id: 73, name: 'Rust', extension: 'rs' },
+    go: { id: 60, name: 'Go', extension: 'go' },
+    php: { id: 68, name: 'PHP', extension: 'php' },
+    ruby: { id: 72, name: 'Ruby', extension: 'rb' },
+    csharp: { id: 51, name: 'C#', extension: 'cs' },
+    kotlin: { id: 78, name: 'Kotlin', extension: 'kt' },
+    swift: { id: 83, name: 'Swift', extension: 'swift' },
+    shell: { id: 46, name: 'Bash', extension: 'sh' },
+    sql: { id: 82, name: 'SQL', extension: 'sql' },
+    json: { id: 0, name: 'JSON', extension: 'json' },
+    markdown: { id: 0, name: 'Markdown', extension: 'md' },
+    yaml: { id: 0, name: 'YAML', extension: 'yaml' },
+    xml: { id: 0, name: 'XML', extension: 'xml' },
+};
+
+// Map file extensions → Monaco editor language IDs
+const EXTENSION_TO_LANGUAGE = {
+    js: 'javascript',
+    jsx: 'javascript',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    ts: 'typescript',
+    tsx: 'typescript',
+    py: 'python',
+    java: 'java',
+    cpp: 'cpp',
+    cc: 'cpp',
+    cxx: 'cpp',
+    c: 'c',
+    h: 'c',
+    cs: 'csharp',
+    go: 'go',
+    rb: 'ruby',
+    rs: 'rust',
+    php: 'php',
+    swift: 'swift',
+    kt: 'kotlin',
+    html: 'html',
+    htm: 'html',
+    css: 'css',
+    scss: 'scss',
+    less: 'less',
+    json: 'json',
+    md: 'markdown',
+    yaml: 'yaml',
+    yml: 'yaml',
+    xml: 'xml',
+    sh: 'shell',
+    bash: 'shell',
+    sql: 'sql',
+};
+
+// Get the default starter comment for a given language
+const getDefaultContent = (lang) => {
+    const commentMap = {
+        python: '# New file\n',
+        html: '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <title>Document</title>\n</head>\n<body>\n\n</body>\n</html>\n',
+        css: '/* styles */\n',
+        sql: '-- SQL queries\n',
+        shell: '#!/bin/bash\n',
+        markdown: '# Title\n',
+        json: '{}\n',
+        yaml: '# YAML config\n',
+        xml: '<?xml version="1.0" encoding="UTF-8"?>\n',
+    };
+    return commentMap[lang] || `// New file\n`;
+};
+
+// Detect language from a filename
+const detectLanguage = (filename) => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    return EXTENSION_TO_LANGUAGE[ext] || 'javascript';
 };
 
 const DEFAULT_TEMPLATES = {
@@ -47,6 +122,11 @@ export const CodeEditorPage = () => {
     const [code, setCode] = useState(DEFAULT_TEMPLATES.javascript);
     const [output, setOutput] = useState('');
     const [isRunning, setIsRunning] = useState(false);
+
+    // New file modal state
+    const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false);
+    const [newFileName, setNewFileName] = useState('');
+    const [newFileNameError, setNewFileNameError] = useState('');
 
     const [aiChatInput, setAiChatInput] = useState('');
     const [aiHistory, setAiHistory] = useState([]);
@@ -316,6 +396,44 @@ export const CodeEditorPage = () => {
         // Notify collaborators which file you switched to
         if (socket) {
             socket.emit('code-change', { roomId: projectId, code: { code: files[index].content, fileIndex: index } });
+        }
+    };
+
+    const handleOpenNewFileModal = () => {
+        setNewFileName('');
+        setNewFileNameError('');
+        setIsNewFileModalOpen(true);
+    };
+
+    const handleCreateNewFile = (e) => {
+        e.preventDefault();
+        const trimmed = newFileName.trim();
+        if (!trimmed) {
+            setNewFileNameError('Please enter a file name.');
+            return;
+        }
+        if (!trimmed.includes('.')) {
+            setNewFileNameError('Include an extension (e.g. app.py, index.html).');
+            return;
+        }
+        // Prevent duplicate names
+        if (files.some(f => f.name === trimmed)) {
+            setNewFileNameError(`A file named "${trimmed}" already exists.`);
+            return;
+        }
+        const detectedLang = detectLanguage(trimmed);
+        const content = getDefaultContent(detectedLang);
+        const newFile = { name: trimmed, content, language: detectedLang };
+        const newFiles = [...files, newFile];
+        const newIndex = newFiles.length - 1;
+        setFiles(newFiles);
+        setActiveFileIndex(newIndex);
+        setCode(content);
+        setLanguage(detectedLang);
+        setIsNewFileModalOpen(false);
+        setNewFileName('');
+        if (socket) {
+            socket.emit('code-change', { roomId: projectId, code: { code: content, fileIndex: newIndex } });
         }
     };
 
@@ -634,7 +752,60 @@ export const CodeEditorPage = () => {
                                 <FileCode size={14} /> {file.name}
                             </button>
                         ))}
+                        {/* Add New File Button */}
+                        <button
+                            onClick={handleOpenNewFileModal}
+                            title="New File"
+                            className="flex items-center gap-1.5 px-4 py-3 font-mono text-xs text-gray-500 hover:text-primary-400 hover:bg-dark-800/60 transition-colors border-r border-white/5 shrink-0"
+                        >
+                            <Plus size={14} /> New File
+                        </button>
                     </div>
+
+                    {/* New File Modal */}
+                    {isNewFileModalOpen && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-dark-950/80 backdrop-blur-sm">
+                            <div className="bg-dark-800 border border-white/10 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-white font-semibold text-base flex items-center gap-2">
+                                        <FileCode size={16} className="text-primary-400" /> New File
+                                    </h3>
+                                    <button onClick={() => setIsNewFileModalOpen(false)} className="text-gray-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5">
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                                <form onSubmit={handleCreateNewFile} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-widest mb-2">File Name</label>
+                                        <input
+                                            type="text"
+                                            autoFocus
+                                            value={newFileName}
+                                            onChange={e => { setNewFileName(e.target.value); setNewFileNameError(''); }}
+                                            placeholder="e.g. app.py, index.html, server.js"
+                                            className="w-full bg-dark-900/80 border border-white/10 text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-primary-500 placeholder-gray-600 transition-colors"
+                                        />
+                                        {newFileNameError && (
+                                            <p className="text-red-400 text-xs mt-1.5">{newFileNameError}</p>
+                                        )}
+                                        {newFileName.includes('.') && !newFileNameError && (
+                                            <p className="text-primary-400/70 text-xs mt-1.5">
+                                                Detected language: <span className="font-semibold text-primary-400">{detectLanguage(newFileName)}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button type="button" onClick={() => setIsNewFileModalOpen(false)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 text-sm transition-colors">
+                                            Cancel
+                                        </button>
+                                        <button type="submit" className="flex-1 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-400 text-white text-sm font-medium transition-colors">
+                                            Create File
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
                     <div className="h-[calc(100%-48px)]">
                         <Editor
                             height="100%"

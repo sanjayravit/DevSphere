@@ -75,10 +75,10 @@ export const WorkspaceProvider = ({ children }) => {
         }
     };
 
-    const createProject = async (name, language = 'javascript', generateWithAI = false) => {
+    const createProject = async (name, language = 'javascript', generateWithAI = false, initialFileName = '') => {
         if (!activeWorkspace) throw new Error("No active workspace");
         try {
-            const res = await api.post(`/projects/${activeWorkspace.id}`, { name, language, generateWithAI });
+            const res = await api.post(`/projects/${activeWorkspace.id}`, { name, language, generateWithAI, initialFileName });
             if (res.data && !res.data.error) {
                 setProjects([...projects, res.data]);
                 return res.data;

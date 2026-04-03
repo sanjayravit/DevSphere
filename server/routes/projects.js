@@ -30,7 +30,7 @@ Return ONLY the raw code, no markdown blocks.`;
 // Create Project in a Workspace
 router.post("/:workspaceId", auth, async (req, res) => {
     try {
-        const { name, language, generateWithAI } = req.body;
+        const { name, language, generateWithAI, initialFileName } = req.body;
         const workspaceId = req.params.workspaceId;
 
         const workspace = await Workspace.findById(workspaceId);
@@ -38,12 +38,19 @@ router.post("/:workspaceId", auth, async (req, res) => {
             return res.status(404).json({ msg: "Workspace not found or unauthorized" });
         }
 
-        // Add default main file extension mapping based on request language
-        let fileExt = "js";
-        if (language === "python") fileExt = "py";
-        if (language === "java") fileExt = "java";
-        if (language === "c") fileExt = "c";
-        if (language === "cpp") fileExt = "cpp";
+        // Determine file extension from language key
+        const EXT_MAP = {
+            javascript: 'js', typescript: 'ts', python: 'py', java: 'java',
+            cpp: 'cpp', c: 'c', csharp: 'cs', go: 'go', ruby: 'rb',
+            rust: 'rs', php: 'php', swift: 'swift', kotlin: 'kt',
+            html: 'html', css: 'css', shell: 'sh', sql: 'sql',
+            json: 'json', markdown: 'md', yaml: 'yaml', xml: 'xml',
+        };
+        const fileExt = EXT_MAP[language] || 'js';
+        // Use client-supplied filename if valid, otherwise fall back to main.<ext>
+        const fileName = (initialFileName && initialFileName.trim().includes('.'))
+            ? initialFileName.trim()
+            : `main.${fileExt}`;
 
         // AI-powered scaffolding: generate starter code if requested
         let initialContent = `// Welcome to your new ${name} project\n// Start building something amazing!\n`;
@@ -55,7 +62,7 @@ router.post("/:workspaceId", auth, async (req, res) => {
         const project = await Project.create({
             name,
             workspaceId,
-            files: [{ name: `main.${fileExt}`, content: initialContent, language: language || "javascript" }],
+            files: [{ name: fileName, content: initialContent, language: language || "javascript" }],
             chatHistory: []
         });
 

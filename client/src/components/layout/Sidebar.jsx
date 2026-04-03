@@ -53,8 +53,39 @@ export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     const [newWorkspaceName, setNewWorkspaceName] = useState("");
     const [newProjectName, setNewProjectName] = useState("");
     const [newProjectLanguage, setNewProjectLanguage] = useState("javascript");
+    const [newProjectInitialFile, setNewProjectInitialFile] = useState("main.js");
     const [generateWithAI, setGenerateWithAI] = useState(false);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
+
+    // Map file extensions to language keys
+    const EXTENSION_TO_LANG = {
+        js: 'javascript', jsx: 'javascript', mjs: 'javascript',
+        ts: 'typescript', tsx: 'typescript',
+        py: 'python',
+        java: 'java',
+        cpp: 'cpp', cc: 'cpp', cxx: 'cpp',
+        c: 'c', h: 'c',
+        cs: 'csharp',
+        go: 'go',
+        rb: 'ruby',
+        rs: 'rust',
+        php: 'php',
+        swift: 'swift',
+        kt: 'kotlin',
+        html: 'html', htm: 'html',
+        css: 'css',
+        sh: 'shell', bash: 'shell',
+        sql: 'sql',
+        json: 'json',
+        md: 'markdown',
+        yaml: 'yaml', yml: 'yaml',
+        xml: 'xml',
+    };
+
+    const detectLangFromFilename = (filename) => {
+        const ext = filename.split('.').pop()?.toLowerCase();
+        return EXTENSION_TO_LANG[ext] || 'javascript';
+    };
 
     const handleLogout = () => {
         logout();
@@ -66,9 +97,15 @@ export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
         if (newProjectName.trim()) {
             setIsCreatingProject(true);
             try {
-                const project = await createProject(newProjectName, newProjectLanguage, generateWithAI);
+                // Determine language from the initial file name entered by the user
+                const langFromFile = newProjectInitialFile.trim()
+                    ? detectLangFromFilename(newProjectInitialFile.trim())
+                    : newProjectLanguage;
+                const project = await createProject(newProjectName, langFromFile, generateWithAI, newProjectInitialFile.trim());
                 setCreateProjectModalOpen(false);
                 setNewProjectName("");
+                setNewProjectInitialFile("main.js");
+                setNewProjectLanguage("javascript");
                 setGenerateWithAI(false);
                 if (project) {
                     navigate(`/editor/${project.id}`);
@@ -239,17 +276,24 @@ export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
                         />
                     </div>
                     <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Primary Language</label>
-                        <select
-                            className="w-full h-12 rounded-xl border border-white/10 bg-dark-800/50 px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition"
-                            value={newProjectLanguage}
-                            onChange={(e) => setNewProjectLanguage(e.target.value)}
-                        >
-                            <option value="javascript">JavaScript</option>
-                            <option value="python">Python</option>
-                            <option value="java">Java</option>
-                            <option value="cpp">C++</option>
-                        </select>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Initial File Name</label>
+                        <Input
+                            icon={Type}
+                            placeholder="e.g. main.py, index.html, app.js"
+                            value={newProjectInitialFile}
+                            onChange={(e) => {
+                                setNewProjectInitialFile(e.target.value);
+                                // Auto-detect language from filename
+                                if (e.target.value.includes('.')) {
+                                    setNewProjectLanguage(detectLangFromFilename(e.target.value));
+                                }
+                            }}
+                        />
+                        {newProjectInitialFile.includes('.') && (
+                            <p className="text-primary-400/70 text-xs pl-1">
+                                Language detected: <span className="font-semibold text-primary-400">{detectLangFromFilename(newProjectInitialFile)}</span>
+                            </p>
+                        )}
                     </div>
                     {/* AI Scaffolding Toggle */}
                     <button
