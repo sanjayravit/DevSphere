@@ -156,11 +156,11 @@ const FeatureCard = ({ icon: Icon, title, desc, delay }) => (
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, margin: "-100px" }}
         transition={{ duration: 0.7, delay, ease: "easeOut" }}
-        className="group relative glass-panel p-8 border border-white/5 hover:border-primary-500/30 transition duration-500 overflow-hidden"
+        className="group relative glass-panel p-8 border border-white/5 hover:border-primary-500/30 transition duration-200 overflow-hidden"
     >
-        <div className="absolute inset-0 bg-gradient-to-br from-primary-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
         <div className="relative z-10">
-            <div className="w-14 h-14 rounded-2xl bg-dark-900 border border-white/10 flex items-center justify-center mb-6 text-white group-hover:scale-110 group-hover:text-primary-400 group-hover:border-primary-500/50 shadow-lg transition duration-500">
+            <div className="w-14 h-14 rounded-2xl bg-dark-900 border border-white/10 flex items-center justify-center mb-6 text-white group-hover:scale-110 group-hover:text-primary-400 group-hover:border-primary-500/50 shadow-lg transition duration-200">
                 <Icon size={28} />
             </div>
             <h3 className="text-2xl font-bold text-white mb-3 tracking-tight">{title}</h3>

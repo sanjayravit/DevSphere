@@ -55,10 +55,10 @@ export const Dashboard = () => {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {STATS_DATA.map((stat, i) => (
-                    <AnimatedCard key={stat.label} delay={i * 0.1} className="flex flex-col group hover:border-primary-500/50 hover:shadow-neon-blue transition duration-500 bg-dark-800/60 backdrop-blur-xl relative overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    <AnimatedCard key={stat.label} delay={i * 0.1} className="flex flex-col group hover:border-primary-500/50 hover:shadow-neon-blue transition duration-200 bg-dark-800/60 backdrop-blur-xl relative overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
                         <div className="flex items-center gap-3 mb-4 relative z-10">
-                            <div className={`w-10 h-10 rounded-lg bg-dark-900/80 flex items-center justify-center border border-white/5 group-hover:scale-110 shadow-lg transition duration-500 ${stat.color}`}>
+                            <div className={`w-10 h-10 rounded-lg bg-dark-900/80 flex items-center justify-center border border-white/5 group-hover:scale-110 shadow-lg transition duration-200 ${stat.color}`}>
                                 <stat.icon size={20} className="drop-shadow-lg" />
                             </div>
                             <span className="text-gray-400 font-medium tracking-wide">{stat.label}</span>

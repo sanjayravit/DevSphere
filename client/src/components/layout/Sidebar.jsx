@@ -26,7 +26,7 @@ const NavItem = ({ to, icon: Icon, label }) => {
         <NavLink to={to}>
             {({ isActive }) => (
                 <div className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-xl transition duration-500 font-medium relative overflow-hidden group",
+                    "flex items-center gap-3 px-4 py-3 rounded-xl transition duration-200 font-medium relative overflow-hidden group",
                     isActive
                         ? "bg-primary-500/10 text-primary-400 shadow-[inset_0_0_20px_rgba(99,102,241,0.15)] before:absolute before:left-0 before:top-1/4 before:bottom-1/4 before:w-1 before:bg-primary-500 before:rounded-r-full before:shadow-[0_0_12px_#6366f1]"
                         : "text-gray-400 hover:text-white hover:bg-white/5"

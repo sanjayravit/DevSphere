@@ -342,7 +342,7 @@ export const SocialFeedPage = () => {
                                 layout
                             >
                                 <AnimatedCard
-                                    className="group hover:border-primary-500/30 hover:bg-dark-900/50 hover:shadow-2xl hover:shadow-primary-500/5 transition-all duration-500 p-8 border-white/5 relative overflow-hidden"
+                                    className="group hover:border-primary-500/30 hover:bg-dark-900/50 hover:shadow-2xl hover:shadow-primary-500/5 transition-all duration-200 p-8 border-white/5 relative overflow-hidden"
                                 >
                                     {/* Glass Highlight */}
                                     <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 blur-[80px] -mr-16 -mt-16 group-hover:bg-primary-500/10 transition-colors" />
