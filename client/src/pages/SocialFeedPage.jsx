@@ -363,7 +363,7 @@ export const SocialFeedPage = () => {
                                                 <div className="flex items-center gap-2 text-xs text-gray-500 font-inter">
                                                     <span>@{post.author?.username || 'anon'}</span>
                                                     <span className="w-1 h-1 bg-gray-700 rounded-full" />
-                                                    <span>{post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true }) : 'just now'}</span>
+                                                    <span>{post.createdAt && !isNaN(new Date(post.createdAt).getTime()) ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true }) : 'just now'}</span>
                                                 </div>
                                             </div>
                                         </div>

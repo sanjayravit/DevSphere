@@ -18,7 +18,7 @@ export const LandingPage = () => {
             <div className="absolute top-[20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-accent-purple/30 blur-[120px] mix-blend-screen animate-blob animation-delay-2000 pointer-events-none" />
             <div className="absolute bottom-[-10%] left-[20%] w-[60%] h-[60%] rounded-full bg-accent-blue/20 blur-[150px] mix-blend-screen animate-blob animation-delay-4000 pointer-events-none" />
 
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.2] mix-blend-overlay pointer-events-none"></div>
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')] opacity-[0.2] mix-blend-overlay pointer-events-none"></div>
 
             {/* Premium Sticky Navigation */}
             <nav className="fixed top-0 w-full z-50 glass-panel border-x-0 border-t-0 rounded-none bg-dark-900/60 backdrop-blur-xl">
