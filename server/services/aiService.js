@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-async function generateFix(errorMessage, codeSnippet) {
+async function generateFix(errorMessage, codeSnippet, pastContext = "") {
     if (!process.env.GEMINI_API_KEY) {
         console.warn("GEMINI_API_KEY not set. Cannot generate fix.");
         return { fixedCode: null, explanation: "API key missing" };
@@ -17,6 +17,7 @@ ${errorMessage}
 
 Code Snippet:
 ${codeSnippet}
+${pastContext ? `\nConsider these past alignments and explanations for similar issues:\n${pastContext}\n` : ""}
 
 Provide the fixed code and a brief explanation. Return ONLY a JSON object in this exact format, with no markdown formatting around it:
 {

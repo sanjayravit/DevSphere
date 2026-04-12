@@ -1,13 +1,23 @@
 const aiService = require('../services/aiService');
+const firebaseService = require('../services/firebaseService');
 
-async function generateFixForError(errorData) {
+async function generateFixForError(errorData, projectId) {
     console.log("[Fix Agent] Generating fix for error...", errorData.error);
 
     if (!errorData.error || errorData.error === "No immediate errors detected.") {
         return null; // No fix needed
     }
 
-    const aiResponse = await aiService.generateFix(errorData.error, errorData.codeSnippet);
+    // 1. Query Learning System
+    const pastFixes = await firebaseService.getPastFixes(projectId, errorData.error);
+    let contextStr = "";
+    if (pastFixes && pastFixes.length > 0) {
+        contextStr = `Prior context from Learning System:\n${pastFixes.join('\n')}`;
+        console.log(`[Fix Agent] Retrieved ${pastFixes.length} past insights from Learning System.`);
+    }
+
+    // 2. Call AI with combined context
+    const aiResponse = await aiService.generateFix(errorData.error, errorData.codeSnippet, contextStr);
 
     return {
         ...errorData,
