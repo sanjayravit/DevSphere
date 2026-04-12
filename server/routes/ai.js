@@ -91,7 +91,8 @@ router.post("/resume", async (req, res) => {
     }
 });
 
-router.post("/copilot", auth, async (req, res) => {
+// Shared handler for both /copilot and /agent endpoints
+const handleCopilotRequest = async (req, res) => {
     const { action, code, projectId, message, targetLanguage } = req.body;
 
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "dummy_key_to_prevent_crash" || process.env.GEMINI_API_KEY === "your_actual_api_key_here") {
@@ -139,7 +140,7 @@ router.post("/copilot", auth, async (req, res) => {
         } else if (action === "refactor") {
             instruction = "Refactor this entire file to achieve better performance, readability, and modern styling. Return ONLY the refactored code without markdown blocks like ```javascript.";
         } else if (action === "convert") {
-            instruction = `Convert this code to ${req.body.targetLanguage || 'a modern format'}. Return ONLY the converted code without markdown blocks like \`\`\`javascript.`;
+            instruction = `Convert this code to ${targetLanguage || 'a modern format'}. Return ONLY the converted code without markdown blocks like \`\`\`javascript.`;
         } else {
             instruction = "Analyze this code.";
         }
@@ -171,8 +172,7 @@ router.post("/copilot", auth, async (req, res) => {
                 chatHistory = chatHistory.slice(chatHistory.length - 50);
             }
 
-            // Only save if it's less than 1MB intuitively, but slicing to 50 should be safe.
-            await Project.save(projectId, { ...project, chatHistory });
+            await Project.save(project.id, { ...project, chatHistory });
         }
 
         res.json({ result: responseText });
@@ -180,6 +180,12 @@ router.post("/copilot", auth, async (req, res) => {
         console.error("Copilot AI Error:", error);
         res.status(500).json({ error: "Failed to generate AI response. Check your API key." });
     }
-});
+};
+
+// /copilot — used by live linter and ghost text inline completions
+router.post("/copilot", auth, handleCopilotRequest);
+
+// /agent — used by the AI panel chat and action buttons (Explain, Bugs, Optimize, etc.)
+router.post("/agent", auth, handleCopilotRequest);
 
 module.exports = router;
