@@ -19,6 +19,15 @@ async function generateFixForError(errorData, projectId) {
     // 2. Call AI with combined context
     const aiResponse = await aiService.generateFix(errorData.error, errorData.codeSnippet, contextStr);
 
+    if (!aiResponse || !aiResponse.fixedCode) {
+        console.warn("[Fix Agent] AI failed to generate a valid fix.");
+        return {
+            ...errorData,
+            fixedCode: null,
+            explanation: aiResponse?.explanation || "AI was unable to propose a reliable fix for this specific error signature."
+        };
+    }
+
     return {
         ...errorData,
         fixedCode: aiResponse.fixedCode,

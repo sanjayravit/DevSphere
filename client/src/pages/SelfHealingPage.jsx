@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { io } from 'socket.io-client';
+import api from '../services/api';
 import {
     Activity, CheckCircle, ServerCrash, BrainCircuit,
     Github, Layers, FolderDot, ChevronDown, Cpu,
@@ -22,8 +23,8 @@ const API_URL = import.meta?.env?.VITE_API_URL || 'http://localhost:5000';
 
 const StatusBadge = ({ monitoring }) => (
     <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border text-sm font-medium transition-all duration-500 ${monitoring
-            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-            : 'bg-dark-800 border-white/10 text-gray-500'
+        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+        : 'bg-dark-800 border-white/10 text-gray-500'
         }`}>
         {monitoring ? (
             <>
@@ -74,9 +75,8 @@ export const SelfHealingPage = () => {
     const fetchHistory = async () => {
         if (!targetId) return;
         try {
-            const res = await fetch(`${API_URL}/api/webhook/history?projectId=${targetId}`);
-            const data = await res.json();
-            if (data.events) setEvents(data.events);
+            const res = await api.get(`/webhook/history?projectId=${targetId}`);
+            if (res.data?.events) setEvents(res.data.events);
         } catch (err) {
             console.error('History fetch failed', err);
         }
@@ -150,8 +150,8 @@ export const SelfHealingPage = () => {
                                     disabled={monitoring}
                                     onClick={() => { setSelectedScope(scope); setProjectDropOpen(false); setWorkspaceDropOpen(false); }}
                                     className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed ${selectedScope === scope
-                                            ? 'bg-primary-500/20 text-primary-300 shadow-inner'
-                                            : 'text-gray-500 hover:text-gray-300'
+                                        ? 'bg-primary-500/20 text-primary-300 shadow-inner'
+                                        : 'text-gray-500 hover:text-gray-300'
                                         }`}
                                 >
                                     {scope === 'workspace' ? <Layers size={14} /> : <FolderDot size={14} />}
@@ -225,10 +225,10 @@ export const SelfHealingPage = () => {
                             onClick={handleEnableMonitoring}
                             disabled={!targetId || monitoring || loading}
                             className={`flex-1 flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-bold text-base transition-all duration-300 shadow-lg ${monitoring
-                                    ? 'bg-dark-900 border border-white/10 text-gray-500 cursor-not-allowed'
-                                    : !targetId
-                                        ? 'bg-dark-900 border border-white/5 text-gray-600 cursor-not-allowed'
-                                        : 'bg-gradient-to-r from-primary-500 to-accent-purple hover:from-primary-400 hover:to-accent-purple/80 text-white shadow-[0_0_32px_rgba(99,102,241,0.4)] hover:shadow-[0_0_48px_rgba(99,102,241,0.6)] hover:scale-[1.02] active:scale-95'
+                                ? 'bg-dark-900 border border-white/10 text-gray-500 cursor-not-allowed'
+                                : !targetId
+                                    ? 'bg-dark-900 border border-white/5 text-gray-600 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-primary-500 to-accent-purple hover:from-primary-400 hover:to-accent-purple/80 text-white shadow-[0_0_32px_rgba(99,102,241,0.4)] hover:shadow-[0_0_48px_rgba(99,102,241,0.6)] hover:scale-[1.02] active:scale-95'
                                 }`}
                         >
                             {loading ? (

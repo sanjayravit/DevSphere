@@ -9,7 +9,12 @@ module.exports = function (req, res, next) {
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || "fallback_dev_secret");
+        const secret = process.env.JWT_SECRET;
+        if (!secret && process.env.NODE_ENV === 'production') {
+            return res.status(500).json({ msg: "Server configuration error: JWT_SECRET missing" });
+        }
+
+        const decoded = jwt.verify(token, secret || "fallback_dev_secret");
         // Robustly handle both { user: { id } } and direct { id } payloads
         const userPayload = decoded.user || decoded;
 

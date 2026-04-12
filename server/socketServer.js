@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const { createAdapter } = require("@socket.io/redis-adapter");
+const Redis = require("ioredis");
 const cors = require("cors");
 const socketHandler = require("./sockets/socketHandler");
 require("dotenv").config();
@@ -16,6 +18,14 @@ const io = new Server(server, {
         credentials: true
     }
 });
+
+// Configure Redis Adapter if URL is provided
+if (process.env.REDIS_URL) {
+    const pubClient = new Redis(process.env.REDIS_URL);
+    const subClient = pubClient.duplicate();
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log("[Socket Server] Redis Adapter integrated for scaling");
+}
 
 socketHandler.init(io);
 

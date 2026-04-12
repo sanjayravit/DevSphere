@@ -7,6 +7,21 @@ const firebaseService = require("../services/firebaseService");
 const socketHandler = require("../sockets/socketHandler");
 const vercelService = require("../services/vercelService");
 const firebaseAdmin = require("../firebaseAdmin");
+const crypto = require("crypto");
+
+const verifyGithubSignature = (req) => {
+    const signature = req.headers['x-hub-signature-256'];
+    if (!signature) return false;
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    if (!secret) {
+        console.warn("GITHUB_WEBHOOK_SECRET not set, skipping verification");
+        return true;
+    }
+    const hmac = crypto.createHmac('sha256', secret);
+    const digest = Buffer.from('sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex'), 'utf8');
+    const checksum = Buffer.from(signature, 'utf8');
+    return checksum.length === digest.length && crypto.timingSafeEqual(digest, checksum);
+};
 
 router.get("/history", async (req, res) => {
     try {
@@ -37,6 +52,12 @@ router.post("/", async (req, res) => {
         const payload = req.body;
 
         console.log(`[Webhook] Received Event - GitHub: ${githubEvent}, Vercel: ${!!vercelSignature}`);
+
+        // Security: Verify GitHub Signature
+        if (githubEvent && !verifyGithubSignature(req)) {
+            console.error("[Webhook] Invalid GitHub signature");
+            return res.status(401).json({ error: "Invalid signature" });
+        }
 
         // Acknowledge receipt immediately
         res.status(200).json({ status: "received", githubEvent, vercel: !!vercelSignature });
