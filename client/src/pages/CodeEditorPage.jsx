@@ -144,6 +144,8 @@ export const CodeEditorPage = () => {
     const [roomUsers, setRoomUsers] = useState([]);
     const [isTerminalVisible, setIsTerminalVisible] = useState(false);
     const [chatInput, setChatInput] = useState('');
+    const [typingUsers, setTypingUsers] = useState({});
+    const typingTimeoutRef = useRef(null);
     const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'ai', 'git'
     const [targetLanguage, setTargetLanguage] = useState('python');
     const cursorsRef = useRef({});
@@ -242,6 +244,15 @@ export const CodeEditorPage = () => {
             setAiHistory(prev => [...prev, aiMessage]);
         });
 
+        socket.on('user-typing-update', ({ socketId, user: typingUser, isTyping }) => {
+            setTypingUsers(prev => {
+                const next = { ...prev };
+                if (isTyping) next[socketId] = typingUser;
+                else delete next[socketId];
+                return next;
+            });
+        });
+
         return () => {
             socket.off('code-update');
             socket.off('chat-update');
@@ -250,6 +261,7 @@ export const CodeEditorPage = () => {
             socket.off('user-left');
             socket.off('cursor-update');
             socket.off('ai-update');
+            socket.off('user-typing-update');
 
             // Cleanup cursor styles
             const styleTag = document.getElementById('cursor-styles');
@@ -535,6 +547,20 @@ export const CodeEditorPage = () => {
         socket.emit('chat-message', { roomId: projectId, message });
         setMessages(prev => [...prev, message]);
         setChatInput('');
+        if (socket) {
+            socket.emit('user-typing', { roomId: projectId, user: latestUser.current || { name: 'Anonymous' }, isTyping: false });
+        }
+    };
+
+    const handleTyping = (e) => {
+        setChatInput(e.target.value);
+        if (socket) {
+            socket.emit('user-typing', { roomId: projectId, user: latestUser.current || { name: 'Anonymous' }, isTyping: true });
+            clearTimeout(typingTimeoutRef.current);
+            typingTimeoutRef.current = setTimeout(() => {
+                socket.emit('user-typing', { roomId: projectId, user: latestUser.current || { name: 'Anonymous' }, isTyping: false });
+            }, 2000);
+        }
     };
 
     const executeCode = async () => {
@@ -585,7 +611,7 @@ export const CodeEditorPage = () => {
             const selectedCode = editorRef.current?.getModel().getValueInRange(editorRef.current?.getSelection());
             const codeToSend = selectedCode || code;
 
-            const res = await api.post('/ai/copilot', {
+            const res = await api.post('/ai/agent', {
                 action: actionPayload,
                 message: cleanedMsg,
                 code: codeToSend,
@@ -620,7 +646,7 @@ export const CodeEditorPage = () => {
             const selectedCode = editorRef.current?.getModel().getValueInRange(editorRef.current?.getSelection());
             const codeToSend = selectedCode || code;
 
-            const res = await api.post('/ai/copilot', {
+            const res = await api.post('/ai/agent', {
                 action: action,
                 code: codeToSend,
                 projectId,
@@ -736,10 +762,33 @@ export const CodeEditorPage = () => {
     };
 
     return (
-        <div className="h-[calc(100vh-100px)] flex flex-col lg:flex-row gap-6">
-            {/* Editor Main Area */}
-            <div className="flex-1 flex flex-col gap-4 h-full">
-                <div className="flex items-center justify-between">
+        <div className="h-[calc(100vh-100px)] flex flex-col lg:flex-row gap-4 lg:gap-6">
+            {/* Left Sidebar: File Explorer */}
+            <AnimatedCard className="hidden lg:flex w-64 flex-col shrink-0 h-full border border-white/10 bg-dark-800/80 p-4">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-white font-semibold text-sm uppercase tracking-widest flex items-center gap-2">
+                        <FileCode size={16} className="text-primary-400" /> Explorer
+                    </h3>
+                    <button onClick={handleOpenNewFileModal} className="opacity-0 lg:opacity-100 text-primary-400 hover:text-white transition-colors" title="New File">
+                        <Plus size={16} />
+                    </button>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1 pr-1">
+                    {files.map((file, index) => (
+                        <button
+                            key={index}
+                            onClick={() => handleTabSwitch(index)}
+                            className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all ${activeFileIndex === index ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30 shadow-sm' : 'hover:bg-white/5 text-gray-400'}`}
+                        >
+                            <span className="truncate">{file.name}</span>
+                        </button>
+                    ))}
+                </div>
+            </AnimatedCard>
+
+            {/* Center: Editor Main Area */}
+            <div className="flex-[2] flex flex-col gap-4 h-full min-w-0">
+                <div className="flex items-center justify-between shrink-0">
                     <div>
                         <h1 className="text-2xl font-display font-bold text-white uppercase tracking-wider">{project?.name || 'Project File'}</h1>
                         <p className="text-sm text-gray-400">Collaborative Workspace • {files.length} File(s)</p>
@@ -774,7 +823,8 @@ export const CodeEditorPage = () => {
                 </div>
 
                 <AnimatedCard className="flex-1 p-0 overflow-hidden border border-white/10 rounded-2xl relative">
-                    <div className="flex w-full overflow-x-auto custom-scrollbar bg-dark-950 border-b border-white/10">
+                    {/* Mobile File Explorer Tabs */}
+                    <div className="flex lg:hidden w-full overflow-x-auto custom-scrollbar bg-dark-950 border-b border-white/10">
                         {files.map((file, index) => (
                             <button
                                 key={index}
@@ -785,13 +835,11 @@ export const CodeEditorPage = () => {
                                 <FileCode size={14} /> {file.name}
                             </button>
                         ))}
-                        {/* Add New File Button */}
                         <button
                             onClick={handleOpenNewFileModal}
-                            title="New File"
                             className="flex items-center gap-1.5 px-4 py-3 font-mono text-xs text-gray-500 hover:text-primary-400 hover:bg-dark-800/60 transition-colors border-r border-white/5 shrink-0"
                         >
-                            <Plus size={14} /> New File
+                            <Plus size={14} /> New
                         </button>
                     </div>
 
@@ -923,8 +971,8 @@ export const CodeEditorPage = () => {
                 </AnimatePresence>
             </div>
 
-            {/* Sidebar */}
-            <AnimatedCard className="w-full lg:w-80 flex flex-col shrink-0 h-[600px] lg:h-full border border-primary-500/20 shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] bg-dark-800/80 backdrop-blur-2xl p-4">
+            {/* Right Sidebar: AI Panel & Chat */}
+            <AnimatedCard className="w-full lg:w-80 xl:w-96 flex flex-col shrink-0 h-[600px] lg:h-full border border-primary-500/20 shadow-[inset_0_0_20px_rgba(99,102,241,0.05)] bg-dark-800/80 backdrop-blur-2xl p-4">
                 {/* Tabs */}
                 <div className="flex border-b border-white/10 mb-4 bg-dark-800/80">
                     <button
@@ -967,13 +1015,18 @@ export const CodeEditorPage = () => {
                                     </div>
                                 ))
                             )}
+                            {Object.keys(typingUsers).length > 0 && (
+                                <div className="text-[10px] text-primary-400 italic px-2 animate-pulse mt-2 transition-all">
+                                    {Object.values(typingUsers).map(u => u.name?.split(' ')[0] || 'Someone').join(', ')} {Object.keys(typingUsers).length > 1 ? 'are' : 'is'} typing...
+                                </div>
+                            )}
                         </div>
                         <div className="absolute bottom-0 left-0 w-full pt-2 pb-1 bg-dark-800">
                             <form onSubmit={handleSendMessage} className="relative">
                                 <input
                                     type="text"
                                     value={chatInput}
-                                    onChange={e => setChatInput(e.target.value)}
+                                    onChange={handleTyping}
                                     placeholder="Type a message…"
                                     className="w-full bg-dark-900/80 border border-white/10 rounded-full pl-5 pr-12 py-3 text-sm focus:outline-none focus:border-primary-500 text-white placeholder-gray-500 transition-colors"
                                 />

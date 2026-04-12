@@ -37,6 +37,10 @@ io.on("connection", (socket) => {
         socket.to(roomId).emit("chat-update", message);
     });
 
+    socket.on("user-typing", ({ roomId, user, isTyping }) => {
+        socket.to(roomId).emit("user-typing-update", { socketId: socket.id, user, isTyping });
+    });
+
     socket.on("ai-response", ({ roomId, message }) => {
         socket.to(roomId).emit("ai-update", message);
     });
