@@ -18,8 +18,12 @@ router.post("/", auth, async (req, res) => {
 
         res.json(workspace);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        console.error("Workspace Creation Error:", err);
+        res.status(500).json({
+            error: "Failed to create workspace",
+            message: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 });
 

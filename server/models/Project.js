@@ -1,6 +1,6 @@
-const { db } = require("../firebaseAdmin");
+const firebaseAdmin = require("../firebaseAdmin");
 
-const getCol = () => db ? db.collection("projects") : null;
+const getCol = () => firebaseAdmin.db ? firebaseAdmin.db.collection("projects") : null;
 
 module.exports = {
     findById: async (id) => {
