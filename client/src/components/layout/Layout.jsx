@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 export const Layout = () => {
     const { user, loading } = useAuth();
     const [isSidebarOpen, setSidebarOpen] = React.useState(false);
+    const [isPinned, setIsPinned] = React.useState(true);
 
     if (loading) {
         return (
@@ -31,7 +32,7 @@ export const Layout = () => {
             <div className="fixed bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-accent-purple/10 blur-[150px] animate-blob animation-delay-4000 pointer-events-none z-0" />
 
             {/* Sidebar (Responsive) */}
-            <Sidebar mobileOpen={isSidebarOpen} setMobileOpen={setSidebarOpen} />
+            <Sidebar mobileOpen={isSidebarOpen} setMobileOpen={setSidebarOpen} isPinned={isPinned} setIsPinned={setIsPinned} />
 
             {/* Backdrop for mobile */}
             <AnimatePresence>
@@ -47,7 +48,7 @@ export const Layout = () => {
             </AnimatePresence>
 
             {/* Main Content Area */}
-            <div className="flex-1 flex flex-col min-w-0 h-screen lg:ml-64 overflow-hidden relative">
+            <div className={`flex-1 flex flex-col min-w-0 h-screen transition-all duration-300 ease-in-out overflow-hidden relative ${isPinned ? 'lg:ml-64' : 'lg:ml-0'}`}>
                 <Topbar onMenuClick={() => setSidebarOpen(true)} />
 
                 <main className="flex-1 p-4 md:p-8 overflow-y-auto custom-scrollbar relative z-10 bg-dark-900/40">

@@ -4,7 +4,7 @@ import socket from '../services/socket';
 import api from '../services/api';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send, Save, FileCode, GitCommit, GitBranch, Code2, Trash2, Loader2, Plus, X } from 'lucide-react';
+import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send, Save, FileCode, GitCommit, GitBranch, Code2, Trash2, Loader2, Plus, X, Minimize2, Maximize2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -147,6 +147,7 @@ export const CodeEditorPage = () => {
     const [typingUsers, setTypingUsers] = useState({});
     const typingTimeoutRef = useRef(null);
     const [activeTab, setActiveTab] = useState('chat'); // 'chat', 'ai', 'git'
+    const [isExplorerMinimized, setIsExplorerMinimized] = useState(false);
     const [targetLanguage, setTargetLanguage] = useState('python');
     const cursorsRef = useRef({});
     const decorationsRef = useRef([]);
@@ -764,26 +765,39 @@ export const CodeEditorPage = () => {
     return (
         <div className="h-[calc(100vh-100px)] flex flex-col lg:flex-row gap-4 lg:gap-6">
             {/* Left Sidebar: File Explorer */}
-            <AnimatedCard className="hidden lg:flex w-64 flex-col shrink-0 h-full border border-white/10 bg-dark-800/80 p-4">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-white font-semibold text-sm uppercase tracking-widest flex items-center gap-2">
-                        <FileCode size={16} className="text-primary-400" /> Explorer
-                    </h3>
-                    <button onClick={handleOpenNewFileModal} className="opacity-0 lg:opacity-100 text-primary-400 hover:text-white transition-colors" title="New File">
-                        <Plus size={16} />
-                    </button>
-                </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1 pr-1">
-                    {files.map((file, index) => (
-                        <button
-                            key={index}
-                            onClick={() => handleTabSwitch(index)}
-                            className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all ${activeFileIndex === index ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30 shadow-sm' : 'hover:bg-white/5 text-gray-400'}`}
-                        >
-                            <span className="truncate">{file.name}</span>
-                        </button>
-                    ))}
-                </div>
+            <AnimatedCard className={`hidden lg:flex flex-col shrink-0 border border-white/10 bg-dark-800/80 p-4 transition-all duration-300 ${isExplorerMinimized ? 'w-16 h-fit items-center cursor-pointer hover:bg-dark-700/80' : 'w-fit min-w-[200px] max-w-[300px] h-fit max-h-full'}`} onClick={() => isExplorerMinimized && setIsExplorerMinimized(false)}>
+                {isExplorerMinimized ? (
+                    <div className="flex flex-col items-center gap-4 py-2" title="Maximize Explorer">
+                        <FileCode size={20} className="text-primary-400" />
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex items-center justify-between mb-4 gap-6 shrink-0">
+                            <h3 className="text-white font-semibold text-sm uppercase tracking-widest flex items-center gap-2">
+                                <FileCode size={16} className="text-primary-400" /> Explorer
+                            </h3>
+                            <div className="flex items-center gap-2 opacity-0 lg:opacity-100">
+                                <button onClick={handleOpenNewFileModal} className="text-primary-400 hover:text-white transition-colors" title="New File">
+                                    <Plus size={16} />
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); setIsExplorerMinimized(true); }} className="text-gray-500 hover:text-white transition-colors" title="Minimize Explorer">
+                                    <Minimize2 size={16} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1 pr-1">
+                            {files.map((file, index) => (
+                                <button
+                                    key={index}
+                                    onClick={() => handleTabSwitch(index)}
+                                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all ${activeFileIndex === index ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30 shadow-sm' : 'hover:bg-white/5 text-gray-400'}`}
+                                >
+                                    <span className="truncate">{file.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </>
+                )}
             </AnimatedCard>
 
             {/* Center: Editor Main Area */}
