@@ -6,6 +6,29 @@ const githubService = require("../services/githubService");
 const firebaseService = require("../services/firebaseService");
 const socketHandler = require("../sockets/socketHandler");
 const vercelService = require("../services/vercelService");
+const firebaseAdmin = require("../firebaseAdmin");
+
+router.get("/history", async (req, res) => {
+    try {
+        const projectId = req.query.projectId || "default_project";
+        if (!firebaseAdmin.db) return res.status(200).json({ events: [] });
+
+        const snapshot = await firebaseAdmin.db.collection('projects').doc(projectId).collection('events')
+            .orderBy('timestamp', 'desc')
+            .limit(50)
+            .get();
+
+        const events = [];
+        snapshot.forEach(doc => {
+            events.push({ id: doc.id, ...doc.data() });
+        });
+
+        res.status(200).json({ events });
+    } catch (error) {
+        console.error("Error fetching history:", error);
+        res.status(500).json({ error: "Failed to fetch event history" });
+    }
+});
 
 router.post("/", async (req, res) => {
     try {

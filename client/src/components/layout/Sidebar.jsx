@@ -18,7 +18,8 @@ import {
     PackageOpen,
     Layers,
     Type,
-    X // Added X icon
+    X, // Added X icon
+    Activity
 } from 'lucide-react';
 import { cn, Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
@@ -214,6 +215,7 @@ export const Sidebar = ({ mobileOpen, setMobileOpen, isPinned, setIsPinned }) =>
                 <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3 pl-2 shrink-0">Navigation</div>
                 <nav className="space-y-1 mb-8 shrink-0">
                     <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" onClick={closeMobile} />
+                    <NavItem to="/self-healing" icon={Activity} label="Self-Healing" onClick={closeMobile} />
                     <NavItem to="/marketplace" icon={PackageOpen} label="Marketplace" onClick={closeMobile} />
                     <NavItem to="/feed" icon={MessageSquare} label="Social Feed" onClick={closeMobile} />
                     <NavItem to="/ai-tools" icon={BrainCircuit} label="AI Tools" onClick={closeMobile} />
