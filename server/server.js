@@ -31,6 +31,7 @@ app.get("/", (req, res) => {
 
 app.get("/api/health", async (req, res) => {
   try {
+    const db = firebaseAdmin.db;
     if (!db) {
       return res.status(503).json({
         status: "unhealthy",

@@ -5,14 +5,22 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const auth = require("../middleware/auth");
 const axios = require('axios');
-const { admin, db } = require("../firebaseAdmin");
+const firebaseAdmin = require("../firebaseAdmin");
+
+// Common DB check middleware
+const checkDb = (req, res, next) => {
+  if (!firebaseAdmin.db) {
+    return res.status(503).json({
+      error: "Service Unavailable",
+      details: "Database is not initialized. Please try again in a few seconds or check server logs."
+    });
+  }
+  next();
+};
 
 // Register
-router.post("/register", async (req, res) => {
+router.post("/register", checkDb, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(503).json({ error: "Database not initialized. Please check your Firebase environment variables.", code: "DB_INIT_ERROR" });
-    }
     const { email, password, username, name } = req.body;
 
     // Check for existing user
@@ -39,11 +47,8 @@ router.post("/register", async (req, res) => {
 });
 
 // Login
-router.post("/login", async (req, res) => {
+router.post("/login", checkDb, async (req, res) => {
   try {
-    if (!db) {
-      return res.status(503).json({ error: "Database not initialized. Please check your Firebase environment variables.", code: "DB_INIT_ERROR" });
-    }
     const user = await User.findByEmail(req.body.email);
 
     if (!user) return res.status(404).json({ error: "No account found with this email.", code: "USER_NOT_FOUND" });
@@ -154,7 +159,7 @@ router.get('/github/callback', async (req, res) => {
 // Firebase Auth Sync
 router.post("/user", async (req, res) => {
   try {
-    if (!admin.apps.length) {
+    if (!firebaseAdmin.admin.apps.length) {
       return res.status(503).json({
         error: "Server configuration missing",
         details: "Firebase Admin is not initialized. Please check Vercel environment variables."
@@ -163,13 +168,13 @@ router.post("/user", async (req, res) => {
     const { idToken } = req.body;
     if (!idToken) return res.status(400).json({ error: "idToken is required" });
 
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decodedToken = await firebaseAdmin.admin.auth().verifyIdToken(idToken);
     const { uid, email, name, picture } = decodedToken;
 
     let user = await User.findById(uid);
     if (!user) {
       // Create user if not exists, use uid as document ID
-      const col = db.collection("users");
+      const col = firebaseAdmin.db.collection("users");
       await col.doc(uid).set({
         username: name || email.split('@')[0],
         email: email,
