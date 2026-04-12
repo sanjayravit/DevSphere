@@ -62,6 +62,7 @@ app.use("/api/projects", require("./routes/projects"));
 app.use("/api/git", require("./routes/git"));
 app.use("/api/marketplace", require("./routes/marketplace"));
 app.use("/api/analytics", require("./routes/analytics"));
+app.use("/api/webhook", require("./routes/webhook"));
 
 // Global Error Handler
 app.use((err, req, res, next) => {
