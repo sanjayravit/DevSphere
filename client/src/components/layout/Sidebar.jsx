@@ -60,6 +60,8 @@ export const Sidebar = ({ mobileOpen, setMobileOpen, isPinned, setIsPinned }) =>
     const [newProjectInitialFile, setNewProjectInitialFile] = useState("main.js");
     const [generateWithAI, setGenerateWithAI] = useState(false);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
+    const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+    const [workspaceError, setWorkspaceError] = useState("");
 
     // Map file extensions to language keys
     const EXTENSION_TO_LANG = {
@@ -123,12 +125,10 @@ export const Sidebar = ({ mobileOpen, setMobileOpen, isPinned, setIsPinned }) =>
         }
     };
 
-    const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
-    const [workspaceError, setWorkspaceError] = useState("");
-...
-const handleCreateWorkspace = async (e) => {
-    e.preventDefault();
-    if (newWorkspaceName.trim()) {
+    const handleCreateWorkspace = async (e) => {
+        e.preventDefault();
+        if (!newWorkspaceName.trim()) return;
+
         setIsCreatingWorkspace(true);
         setWorkspaceError("");
         try {
@@ -141,232 +141,238 @@ const handleCreateWorkspace = async (e) => {
         } finally {
             setIsCreatingWorkspace(false);
         }
-    }
-};
+    };
 
-const closeMobile = () => {
-    if (setMobileOpen) setMobileOpen(false);
-};
+    const closeMobile = () => {
+        if (setMobileOpen) setMobileOpen(false);
+    };
 
-return (
-    <>
-        {/* Invisible hover trigger zone when unpinned */}
-        {!isPinned && !isHovered && (
-            <div
-                className="fixed left-0 top-0 w-4 h-screen z-50 lg:block hidden"
-                onMouseEnter={() => setIsHovered(true)}
-            />
-        )}
-        <div
-            className={cn(
-                "w-64 h-screen fixed left-0 top-0 border-r border-white/5 bg-dark-900/50 backdrop-blur-xl flex flex-col pt-6 pb-6 px-4 z-40 custom-scrollbar overflow-y-auto transition-transform duration-300 ease-in-out",
-                mobileOpen ? "translate-x-0" : "-translate-x-full",
-                isPinned ? "lg:translate-x-0" : (isHovered ? "lg:translate-x-0" : "lg:-translate-x-full")
+    return (
+        <>
+            {/* Invisible hover trigger zone when unpinned */}
+            {!isPinned && !isHovered && (
+                <div
+                    className="fixed left-0 top-0 w-4 h-screen z-50 lg:block hidden"
+                    onMouseEnter={() => setIsHovered(true)}
+                />
             )}
-            onMouseEnter={() => !isPinned && setIsHovered(true)}
-            onMouseLeave={() => !isPinned && setIsHovered(false)}
-        >
-            {/* Mobile Close Button */}
-            <button
-                onClick={closeMobile}
-                className="lg:hidden absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors"
+            <div
+                className={cn(
+                    "w-64 h-screen fixed left-0 top-0 border-r border-white/5 bg-dark-900/50 backdrop-blur-xl flex flex-col pt-6 pb-6 px-4 z-40 custom-scrollbar overflow-y-auto transition-transform duration-300 ease-in-out",
+                    mobileOpen ? "translate-x-0" : "-translate-x-full",
+                    isPinned ? "lg:translate-x-0" : (isHovered ? "lg:translate-x-0" : "lg:-translate-x-full")
+                )}
+                onMouseEnter={() => !isPinned && setIsHovered(true)}
+                onMouseLeave={() => !isPinned && setIsHovered(false)}
             >
-                <X size={20} />
-            </button>
-
-            {/* Desktop Pin/Unpin Button */}
-            <button
-                type="button"
-                onClick={() => { setIsPinned(!isPinned); setIsHovered(false); }}
-                className="hidden lg:flex absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors z-50"
-                title={isPinned ? "Unpin Sidebar" : "Pin Sidebar"}
-            >
-                {isPinned ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
-            </button>
-
-            {/* Workspace Selector */}
-            <div className="mb-6 relative shrink-0">
+                {/* Mobile Close Button */}
                 <button
-                    onClick={() => setWorkspaceDropdownOpen(!isWorkspaceDropdownOpen)}
-                    className="w-full flex items-center justify-between p-3 rounded-xl bg-dark-800/80 border border-white/10 hover:border-primary-500/50 transition-colors"
+                    onClick={closeMobile}
+                    className="lg:hidden absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors"
                 >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center shrink-0">
-                            <TerminalSquare size={16} className="text-white" />
-                        </div>
-                        <div className="text-left font-medium text-white truncate">
-                            <div className="text-[10px] text-gray-500 tracking-widest uppercase">Workspace</div>
-                            <div className="truncate text-sm">{activeWorkspace?.name || 'Loading...'}</div>
-                        </div>
-                    </div>
-                    <ChevronDown size={14} className="text-gray-400 shrink-0" />
+                    <X size={20} />
                 </button>
 
-                {isWorkspaceDropdownOpen && (
-                    <div className="absolute top-full left-0 w-full mt-2 bg-dark-800 border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
-                        {workspaces.map(w => (
-                            <button
-                                key={w.id}
-                                onClick={() => { changeWorkspace(w); setWorkspaceDropdownOpen(false); }}
-                                className={`w-full text-left p-3 text-sm hover:bg-white/5 transition-colors ${w.id === activeWorkspace?.id ? 'text-primary-400 bg-primary-500/5' : 'text-gray-300'}`}
-                            >
-                                {w.name}
-                            </button>
-                        ))}
-                        <button
-                            onClick={() => { setCreateWorkspaceModalOpen(true); setWorkspaceDropdownOpen(false); }}
-                            className="w-full text-left p-3 text-sm text-gray-400 hover:text-white hover:bg-white/5 border-t border-white/5 flex items-center gap-2"
-                        >
-                            <Plus size={14} /> New Workspace
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {/* Global Navigation */}
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3 pl-2 shrink-0">Navigation</div>
-            <nav className="space-y-1 mb-8 shrink-0">
-                <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" onClick={closeMobile} />
-                <NavItem to="/self-healing" icon={Activity} label="Self-Healing" onClick={closeMobile} />
-                <NavItem to="/marketplace" icon={PackageOpen} label="Marketplace" onClick={closeMobile} />
-                <NavItem to="/feed" icon={MessageSquare} label="Social Feed" onClick={closeMobile} />
-                <NavItem to="/ai-tools" icon={BrainCircuit} label="AI Tools" onClick={closeMobile} />
-                <NavItem to="/profile" icon={Github} label="My Profile" onClick={closeMobile} />
-            </nav>
-
-            {/* Workspace Projects List */}
-            <div className="flex items-center justify-between mb-3 pl-2 pr-1 shrink-0">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Projects</div>
-                <button onClick={() => setCreateProjectModalOpen(true)} className="text-gray-400 hover:text-primary-400 transition-colors p-1" title="New Project">
-                    <Plus size={14} />
+                {/* Desktop Pin/Unpin Button */}
+                <button
+                    type="button"
+                    onClick={() => { setIsPinned(!isPinned); setIsHovered(false); }}
+                    className="hidden lg:flex absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors z-50"
+                    title={isPinned ? "Unpin Sidebar" : "Pin Sidebar"}
+                >
+                    {isPinned ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
                 </button>
-            </div>
-            <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar mb-6 min-h-[100px]">
-                {projects.map(p => (
-                    <NavItem key={p.id} to={`/editor/${p.id}`} icon={FolderDot} label={p.name} onClick={closeMobile} />
-                ))}
-                {projects.length === 0 && (
-                    <div className="text-sm text-gray-600 px-4 py-2 italic text-center mt-4">No projects yet</div>
-                )}
-            </nav>
 
-            {/* Session Settings */}
-            <div className="mt-auto border-t border-white/5 pt-6 shrink-0">
-                {user && (
-                    <div className="flex items-center gap-3 px-4 mb-4">
-                        <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center border border-white/10 uppercase tracking-wider font-semibold text-primary-400 shrink-0">
-                            {user.name ? user.name.slice(0, 2) : 'US'}
-                        </div>
-                        <div className="overflow-hidden">
-                            <p className="text-sm font-medium text-white truncate">{user.name || 'Developer'}</p>
-                            <p className="text-xs text-gray-400 truncate">{user.email || 'user@devsphere.io'}</p>
-                        </div>
-                    </div>
-                )}
-                <div className="flex gap-2">
-                    <button className="flex-1 flex justify-center items-center gap-2 p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors bg-dark-800 border border-white/5">
-                        <Settings size={18} />
-                    </button>
+                {/* Workspace Selector */}
+                <div className="mb-6 relative shrink-0">
                     <button
-                        onClick={handleLogout}
-                        className="flex-1 flex justify-center items-center gap-2 p-2.5 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-400/10 transition-colors bg-dark-800 border border-white/5"
+                        onClick={() => setWorkspaceDropdownOpen(!isWorkspaceDropdownOpen)}
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-dark-800/80 border border-white/10 hover:border-primary-500/50 transition-colors"
                     >
-                        <LogOut size={18} />
+                        <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-primary-500 to-accent-purple flex items-center justify-center shrink-0">
+                                <TerminalSquare size={16} className="text-white" />
+                            </div>
+                            <div className="text-left font-medium text-white truncate">
+                                <div className="text-[10px] text-gray-500 tracking-widest uppercase">Workspace</div>
+                                <div className="truncate text-sm">{activeWorkspace?.name || 'Loading...'}</div>
+                            </div>
+                        </div>
+                        <ChevronDown size={14} className="text-gray-400 shrink-0" />
+                    </button>
+
+                    {isWorkspaceDropdownOpen && (
+                        <div className="absolute top-full left-0 w-full mt-2 bg-dark-800 border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                            {workspaces.map(w => (
+                                <button
+                                    key={w.id}
+                                    onClick={() => { changeWorkspace(w); setWorkspaceDropdownOpen(false); }}
+                                    className={`w-full text-left p-3 text-sm hover:bg-white/5 transition-colors ${w.id === activeWorkspace?.id ? 'text-primary-400 bg-primary-500/5' : 'text-gray-300'}`}
+                                >
+                                    {w.name}
+                                </button>
+                            ))}
+                            <button
+                                onClick={() => { setCreateWorkspaceModalOpen(true); setWorkspaceDropdownOpen(false); }}
+                                className="w-full text-left p-3 text-sm text-gray-400 hover:text-white hover:bg-white/5 border-t border-white/5 flex items-center gap-2"
+                            >
+                                <Plus size={14} /> New Workspace
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Global Navigation */}
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3 pl-2 shrink-0">Navigation</div>
+                <nav className="space-y-1 mb-8 shrink-0">
+                    <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" onClick={closeMobile} />
+                    <NavItem to="/self-healing" icon={Activity} label="Self-Healing" onClick={closeMobile} />
+                    <NavItem to="/marketplace" icon={PackageOpen} label="Marketplace" onClick={closeMobile} />
+                    <NavItem to="/feed" icon={MessageSquare} label="Social Feed" onClick={closeMobile} />
+                    <NavItem to="/ai-tools" icon={BrainCircuit} label="AI Tools" onClick={closeMobile} />
+                    <NavItem to="/profile" icon={Github} label="My Profile" onClick={closeMobile} />
+                </nav>
+
+                {/* Workspace Projects List */}
+                <div className="flex items-center justify-between mb-3 pl-2 pr-1 shrink-0">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Projects</div>
+                    <button onClick={() => setCreateProjectModalOpen(true)} className="text-gray-400 hover:text-primary-400 transition-colors p-1" title="New Project">
+                        <Plus size={14} />
                     </button>
                 </div>
-            </div>
+                <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar mb-6 min-h-[100px]">
+                    {projects.map(p => (
+                        <NavItem key={p.id} to={`/editor/${p.id}`} icon={FolderDot} label={p.name} onClick={closeMobile} />
+                    ))}
+                    {projects.length === 0 && (
+                        <div className="text-sm text-gray-600 px-4 py-2 italic text-center mt-4">No projects yet</div>
+                    )}
+                </nav>
 
-            {/* Modals */}
-            <Modal
-                isOpen={isCreateWorkspaceModalOpen}
-                onClose={() => setCreateWorkspaceModalOpen(false)}
-                title="Create New Workspace"
-            >
-                <form onSubmit={handleCreateWorkspace} className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Workspace Name</label>
-                        <Input
-                            icon={Layers}
-                            placeholder="e.g. Acme Studio"
-                            value={newWorkspaceName}
-                            onChange={(e) => setNewWorkspaceName(e.target.value)}
-                            autoFocus
-                        />
+                {/* Session Settings */}
+                <div className="mt-auto border-t border-white/5 pt-6 shrink-0">
+                    {user && (
+                        <div className="flex items-center gap-3 px-4 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center border border-white/10 uppercase tracking-wider font-semibold text-primary-400 shrink-0">
+                                {user.name ? user.name.slice(0, 2) : 'US'}
+                            </div>
+                            <div className="overflow-hidden">
+                                <p className="text-sm font-medium text-white truncate">{user.name || 'Developer'}</p>
+                                <p className="text-xs text-gray-400 truncate">{user.email || 'user@devsphere.io'}</p>
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex gap-2">
+                        <button className="flex-1 flex justify-center items-center gap-2 p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors bg-dark-800 border border-white/5">
+                            <Settings size={18} />
+                        </button>
+                        <button
+                            onClick={handleLogout}
+                            className="flex-1 flex justify-center items-center gap-2 p-2.5 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-400/10 transition-colors bg-dark-800 border border-white/5"
+                        >
+                            <LogOut size={18} />
+                        </button>
                     </div>
-                    <Button type="submit" className="w-full" disabled={!newWorkspaceName.trim()}>
-                        Create Workspace
-                    </Button>
-                </form>
-            </Modal>
+                </div>
 
-            <Modal
-                isOpen={isCreateProjectModalOpen}
-                onClose={() => setCreateProjectModalOpen(false)}
-                title="Launch New Project"
-            >
-                <form onSubmit={handleCreateProject} className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Project Name</label>
-                        <Input
-                            icon={Type}
-                            placeholder="e.g. AI Dashboard"
-                            value={newProjectName}
-                            onChange={(e) => setNewProjectName(e.target.value)}
-                            autoFocus
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Initial File Name</label>
-                        <Input
-                            icon={Type}
-                            placeholder="e.g. main.py, index.html, app.js"
-                            value={newProjectInitialFile}
-                            onChange={(e) => {
-                                setNewProjectInitialFile(e.target.value);
-                                // Auto-detect language from filename
-                                if (e.target.value.includes('.')) {
-                                    setNewProjectLanguage(detectLangFromFilename(e.target.value));
-                                }
-                            }}
-                        />
-                        {newProjectInitialFile.includes('.') && (
-                            <p className="text-primary-400/70 text-xs pl-1">
-                                Language detected: <span className="font-semibold text-primary-400">{detectLangFromFilename(newProjectInitialFile)}</span>
-                            </p>
+                {/* Modals */}
+                <Modal
+                    isOpen={isCreateWorkspaceModalOpen}
+                    onClose={() => { setCreateWorkspaceModalOpen(false); setWorkspaceError(""); }}
+                    title="Create New Workspace"
+                >
+                    <form onSubmit={handleCreateWorkspace} className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Workspace Name</label>
+                            <Input
+                                icon={Layers}
+                                placeholder="e.g. Acme Studio"
+                                value={newWorkspaceName}
+                                onChange={(e) => { setNewWorkspaceName(e.target.value); setWorkspaceError(""); }}
+                                autoFocus
+                            />
+                        </div>
+
+                        {workspaceError && (
+                            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                                {workspaceError}
+                            </div>
                         )}
-                    </div>
-                    {/* AI Scaffolding Toggle */}
-                    <button
-                        type="button"
-                        onClick={() => setGenerateWithAI(!generateWithAI)}
-                        className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-300 text-left ${generateWithAI ? 'border-primary-500/50 bg-primary-500/10 text-primary-400' : 'border-white/10 bg-dark-800/30 text-gray-400 hover:border-primary-500/30 hover:text-primary-300'}`}
-                    >
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${generateWithAI ? 'bg-primary-500/20' : 'bg-white/5'}`}>
-                            <BrainCircuit size={16} className={generateWithAI ? 'text-primary-400' : 'text-gray-500'} />
+
+                        <Button type="submit" className="w-full" disabled={!newWorkspaceName.trim() || isCreatingWorkspace} isLoading={isCreatingWorkspace}>
+                            {isCreatingWorkspace ? 'Building...' : 'Create Workspace'}
+                        </Button>
+                    </form>
+                </Modal>
+
+                <Modal
+                    isOpen={isCreateProjectModalOpen}
+                    onClose={() => setCreateProjectModalOpen(false)}
+                    title="Launch New Project"
+                >
+                    <form onSubmit={handleCreateProject} className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Project Name</label>
+                            <Input
+                                icon={Type}
+                                placeholder="e.g. AI Dashboard"
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                autoFocus
+                            />
                         </div>
-                        <div>
-                            <div className="text-sm font-semibold">Generate with AI ✨</div>
-                            <div className="text-xs opacity-70">{generateWithAI ? 'AI will scaffold production-ready code for this project' : 'Click to enable AI code scaffolding'}</div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">Initial File Name</label>
+                            <Input
+                                icon={Type}
+                                placeholder="e.g. main.py, index.html, app.js"
+                                value={newProjectInitialFile}
+                                onChange={(e) => {
+                                    setNewProjectInitialFile(e.target.value);
+                                    // Auto-detect language from filename
+                                    if (e.target.value.includes('.')) {
+                                        setNewProjectLanguage(detectLangFromFilename(e.target.value));
+                                    }
+                                }}
+                            />
+                            {newProjectInitialFile.includes('.') && (
+                                <p className="text-primary-400/70 text-xs pl-1">
+                                    Language detected: <span className="font-semibold text-primary-400">{detectLangFromFilename(newProjectInitialFile)}</span>
+                                </p>
+                            )}
                         </div>
-                        <div className={`ml-auto w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${generateWithAI ? 'border-primary-500 bg-primary-500' : 'border-gray-600'}`}>
-                            {generateWithAI && <div className="w-2 h-2 rounded-full bg-white" />}
-                        </div>
-                    </button>
-                    <Button
-                        type="submit"
-                        className="w-full"
-                        disabled={!newProjectName.trim() || isCreatingProject || !activeWorkspace}
-                        isLoading={isCreatingProject}
-                    >
-                        {isCreatingProject
-                            ? (generateWithAI ? 'AI Building…' : 'Creating…')
-                            : (!activeWorkspace ? 'Waiting for Workspace...' : 'Generate Project')
-                        }
-                    </Button>
-                </form>
-            </Modal>
-        </div>
-    </>
-);
+                        {/* AI Scaffolding Toggle */}
+                        <button
+                            type="button"
+                            onClick={() => setGenerateWithAI(!generateWithAI)}
+                            className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-300 text-left ${generateWithAI ? 'border-primary-500/50 bg-primary-500/10 text-primary-400' : 'border-white/10 bg-dark-800/30 text-gray-400 hover:border-primary-500/30 hover:text-primary-300'}`}
+                        >
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${generateWithAI ? 'bg-primary-500/20' : 'bg-white/5'}`}>
+                                <BrainCircuit size={16} className={generateWithAI ? 'text-primary-400' : 'text-gray-500'} />
+                            </div>
+                            <div>
+                                <div className="text-sm font-semibold">Generate with AI ✨</div>
+                                <div className="text-xs opacity-70">{generateWithAI ? 'AI will scaffold production-ready code for this project' : 'Click to enable AI code scaffolding'}</div>
+                            </div>
+                            <div className={`ml-auto w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${generateWithAI ? 'border-primary-500 bg-primary-500' : 'border-gray-600'}`}>
+                                {generateWithAI && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                        </button>
+                        <Button
+                            type="submit"
+                            className="w-full"
+                            disabled={!newProjectName.trim() || isCreatingProject || !activeWorkspace}
+                            isLoading={isCreatingProject}
+                        >
+                            {isCreatingProject
+                                ? (generateWithAI ? 'AI Building…' : 'Creating…')
+                                : (!activeWorkspace ? 'Waiting for Workspace...' : 'Generate Project')
+                            }
+                        </Button>
+                    </form>
+                </Modal>
+            </div>
+        </>
+    );
 };
 

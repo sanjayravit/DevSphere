@@ -30,8 +30,9 @@ export const AuthProvider = ({ children }) => {
                     localStorage.setItem('token', res.data.token);
                     setUser(res.data.user);
                 } catch (err) {
-                    console.error("Firebase sync error", err);
-                    setUser(fbUser); // Fallback
+                    console.error("Critical: Backend Sync Failed. DevSphere will run in limited mode.", err.message);
+                    // Use a special state or flag for sync failure if needed
+                    setUser({ ...fbUser, syncError: true });
                 }
             } else {
                 setUser(null);
