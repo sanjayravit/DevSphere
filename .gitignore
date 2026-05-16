@@ -5,3 +5,16 @@ server/.env
 
 serviceAccountKey.json
 server/serviceAccountKey.json
+
+# Unwanted files
+eslint_*.txt
+temp_staged_files.txt
+server_app_changes.diff
+skill help
+test-live-*.js
+trace-vercel.js
+status*.txt
+tracked_files.txt
+server/error.log
+server/git-cache/
+.agents/
