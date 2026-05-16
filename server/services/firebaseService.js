@@ -1,14 +1,14 @@
-const { db } = require('../firebaseAdmin');
+const firebaseAdmin = require('../firebaseAdmin');
 
 async function logEvent(projectId, eventData) {
-    if (!db) {
+    if (!firebaseAdmin.db) {
         console.warn("Firebase not initialized. Cannot log event.");
         return null;
     }
 
     try {
         const timestamp = new Date().toISOString();
-        const docRef = await db.collection('projects').doc(projectId).collection('events').add({
+        const docRef = await firebaseAdmin.db.collection('projects').doc(projectId).collection('events').add({
             ...eventData,
             timestamp
         });
@@ -26,9 +26,9 @@ async function logEvent(projectId, eventData) {
 }
 
 async function saveToLearningSystem(projectId, fixEventData) {
-    if (!db) return null;
+    if (!firebaseAdmin.db) return null;
     try {
-        await db.collection('projects').doc(projectId).collection('learning_system').add({
+        await firebaseAdmin.db.collection('projects').doc(projectId).collection('learning_system').add({
             errorSignature: fixEventData.errorData.error, // Simplified signature
             explanation: fixEventData.explanation,
             timestamp: new Date().toISOString()
@@ -39,10 +39,10 @@ async function saveToLearningSystem(projectId, fixEventData) {
 }
 
 async function getPastFixes(projectId, errorSignature) {
-    if (!db) return [];
+    if (!firebaseAdmin.db) return [];
     try {
         // Query recent similar errors (in a real system, you'd use embeddings for semantic search)
-        const snapshot = await db.collection('projects').doc(projectId).collection('learning_system')
+        const snapshot = await firebaseAdmin.db.collection('projects').doc(projectId).collection('learning_system')
             .limit(5)
             .get();
 
@@ -60,9 +60,9 @@ async function getPastFixes(projectId, errorSignature) {
 }
 
 async function syncProjectConfiguration(projectId, configData) {
-    if (!db) return false;
+    if (!firebaseAdmin.db) return false;
     try {
-        await db.collection('projects').doc(projectId).set({ configuration: configData }, { merge: true });
+        await firebaseAdmin.db.collection('projects').doc(projectId).set({ configuration: configData }, { merge: true });
         return true;
     } catch (error) {
         console.error("Error syncing project configuration:", error);
