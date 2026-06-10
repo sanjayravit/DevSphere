@@ -30,8 +30,9 @@ export const AuthProvider = ({ children }) => {
                     localStorage.setItem('token', res.data.token);
                     setUser(res.data.user);
                 } catch (err) {
-                    console.error("Critical: Backend Sync Failed. DevSphere will run in limited mode.", err.message);
-                    alert("Developer Sphere: Backend synchronization failed. Some features may be unavailable. Please refresh or try again later.");
+                    const errorMsg = err.response?.data?.details || err.response?.data?.error || err.message;
+                    console.error("Critical: Backend Sync Failed. DevSphere will run in limited mode.", errorMsg);
+                    alert(`Developer Sphere Sync Failed: ${errorMsg}`);
                     // Use a special state or flag for sync failure if needed
                     setUser({ ...fbUser, syncError: true });
                 }
