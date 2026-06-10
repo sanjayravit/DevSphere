@@ -5,7 +5,6 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "3": "^2.1.0",
     "@ai-sdk/google": "^3.0.43",
     "@google/generative-ai": "^0.24.1",
     "@socket.io/redis-adapter": "^8.3.0",

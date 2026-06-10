@@ -40,6 +40,7 @@ export const WorkspaceProvider = ({ children }) => {
             }
         } catch (err) {
             console.error("Error fetching workspaces:", err);
+            alert("Failed to load your workspaces. Please ensure you are logged in correctly.");
             setLoading(false);
         }
     };
