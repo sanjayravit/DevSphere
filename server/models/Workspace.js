@@ -1,8 +1,7 @@
-const firebaseAdmin = require("../firebaseAdmin");
-
+import firebaseAdmin from "../firebaseAdmin.js";
 const getCol = () => firebaseAdmin.db ? firebaseAdmin.db.collection("workspaces") : null;
 
-module.exports = {
+const model = {
     findById: async (id) => {
         if (!id) return null;
         const col = getCol();
@@ -25,3 +24,5 @@ module.exports = {
         return { id: res.id, ...fullData };
     }
 };
+
+export default model;

@@ -1,12 +1,11 @@
-const express = require("express");
+import express from "express";
 const router = express.Router();
-const User = require("../models/user");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const auth = require("../middleware/auth");
-const axios = require('axios');
-const firebaseAdmin = require("../firebaseAdmin");
-
+import User from "../models/user.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import auth from "../middleware/auth.js";
+import axios from 'axios';
+import firebaseAdmin from "../firebaseAdmin.js";
 // Common DB check middleware
 const checkDb = (req, res, next) => {
   if (!firebaseAdmin.db) {
@@ -215,4 +214,4 @@ router.post("/user", async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

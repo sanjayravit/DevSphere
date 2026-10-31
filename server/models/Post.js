@@ -1,8 +1,7 @@
-const { db } = require("../firebaseAdmin");
-
+import { db } from "../firebaseAdmin.js";
 const getCol = () => db ? db.collection("posts") : null;
 
-module.exports = {
+const model = {
     findAll: async () => {
         const col = getCol();
         if (!col) return [];
@@ -30,3 +29,5 @@ module.exports = {
         return { id, ...data };
     }
 };
+
+export default model;

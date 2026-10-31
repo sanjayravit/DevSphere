@@ -1,6 +1,6 @@
-const router = require("express").Router();
-const axios = require("axios");
-
+import express from "express";
+const router = express.Router();
+import axios from "axios";
 // Map Judge0 IDs to Wandbox compiler configs
 const WANDBOX_COMPILERS = {
   63: "nodejs-20.17.0",
@@ -32,4 +32,4 @@ router.post("/run", async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

@@ -1,11 +1,12 @@
-const fs = require('fs');
-const path = require('path');
-const simpleGit = require('simple-git');
-const Project = require('../models/Project');
-
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'node:url';
+import simpleGit from 'simple-git';
+import Project from '../models/Project.js';
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
 const GIT_CACHE_DIR = (process.env.NODE_ENV === 'production' || process.env.VERCEL)
     ? path.join('/tmp', 'git-cache')
-    : path.join(__dirname, '..', 'git-cache');
+    : path.join(serverDir, '..', 'git-cache');
 
 if (!fs.existsSync(GIT_CACHE_DIR)) {
     try {
@@ -45,7 +46,7 @@ const syncProjectToDisk = async (projectId) => {
     return { git, repoDir };
 };
 
-exports.commitCode = async (projectId, message, authorName) => {
+export const commitCode = async (projectId, message, authorName) => {
     try {
         const { git } = await syncProjectToDisk(projectId);
 
@@ -67,7 +68,7 @@ exports.commitCode = async (projectId, message, authorName) => {
     }
 };
 
-exports.getHistory = async (projectId) => {
+export const getHistory = async (projectId) => {
     try {
         const { git } = await syncProjectToDisk(projectId);
         const log = await git.log();
@@ -77,3 +78,5 @@ exports.getHistory = async (projectId) => {
         return [];
     }
 };
+
+export default { commitCode, getHistory };

@@ -1,11 +1,10 @@
-const express = require("express");
+import express from "express";
 const router = express.Router();
-const multer = require("multer");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const auth = require("../middleware/auth");
-const Project = require("../models/Project");
-const Workspace = require("../models/Workspace");
-
+import multer from "multer";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import auth from "../middleware/auth.js";
+import Project from "../models/Project.js";
+import Workspace from "../models/Workspace.js";
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Vercel Serverless Polyfills for pdf-parse (canvas-free)
@@ -19,8 +18,7 @@ if (typeof global.Path2D === "undefined") {
     global.Path2D = class Path2D { };
 }
 
-const pdfParse = require("pdf-parse");
-
+import { PDFParse } from "pdf-parse";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key_to_prevent_crash");
 
 const analyzeResumeWithGemini = async (text) => {
@@ -61,8 +59,9 @@ router.post("/resume-upload", upload.single("file"), async (req, res) => {
         const ext = req.file.originalname.split('.').pop().toLowerCase();
 
         if (ext === "pdf") {
-            const data = await pdfParse(req.file.buffer);
-            text = data.text;
+            const parser = new PDFParse({ data: req.file.buffer });
+            try { const data = await parser.getText(); text = data.text; }
+            finally { await parser.destroy(); }
         } else if (ext === "txt") {
             text = req.file.buffer.toString("utf-8");
         } else {
@@ -188,4 +187,4 @@ router.post("/copilot", auth, handleCopilotRequest);
 // /agent — used by the AI panel chat and action buttons (Explain, Bugs, Optimize, etc.)
 router.post("/agent", auth, handleCopilotRequest);
 
-module.exports = router;
+export default router;

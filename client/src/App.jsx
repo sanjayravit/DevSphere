@@ -15,6 +15,7 @@ const AIToolsPage = React.lazy(() => import('./pages/AIToolsPage').then(m => ({ 
 const RepositoryViewerPage = React.lazy(() => import('./pages/RepositoryViewerPage').then(m => ({ default: m.RepositoryViewerPage })));
 const MarketplacePage = React.lazy(() => import('./pages/MarketplacePage').then(m => ({ default: m.MarketplacePage })));
 const SelfHealingPage = React.lazy(() => import('./pages/SelfHealingPage').then(m => ({ default: m.SelfHealingPage })));
+const V2WorkspacePage = React.lazy(() => import('./pages/V2WorkspacePage').then(m => ({ default: m.V2WorkspacePage })));
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
                 <Route path="/repo/:owner/:repoName" element={<RepositoryViewerPage />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/self-healing" element={<SelfHealingPage />} />
+                <Route path="/v2" element={<V2WorkspacePage />} />
                 <Route path="/marketplace" element={<MarketplacePage />} />
                 <Route path="/editor" element={<div className="p-8 text-center text-gray-500">Select or create a project to open the editor.</div>} />
                 <Route path="/editor/:projectId" element={<CodeEditorPage />} />

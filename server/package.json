@@ -2,7 +2,9 @@
   "name": "devsphere-server",
   "version": "1.0.0",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test ./test/*.test.js",
+    "check": "node ../scripts/check-server.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.43",
@@ -21,6 +23,8 @@
     "multer": "^2.1.1",
     "pdf-parse": "^2.4.5",
     "simple-git": "^3.33.0",
-    "socket.io": "^4.8.3"
-  }
+    "socket.io": "^4.8.3",
+    "openai": "^6.36.0"
+  },
+  "type": "module"
 }

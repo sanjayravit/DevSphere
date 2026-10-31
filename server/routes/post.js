@@ -1,8 +1,8 @@
-const router = require("express").Router();
-const Post = require("../models/Post");
-const User = require("../models/user");
-const auth = require("../middleware/auth");
-
+import express from "express";
+const router = express.Router();
+import Post from "../models/Post.js";
+import User from "../models/user.js";
+import auth from "../middleware/auth.js";
 // Create post
 router.post("/", auth, async (req, res) => {
     try {
@@ -107,5 +107,4 @@ router.post("/:id/comment", auth, async (req, res) => {
     }
 });
 
-module.exports = router;
-
+export default router;

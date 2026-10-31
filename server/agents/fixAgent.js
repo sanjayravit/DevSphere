@@ -1,6 +1,5 @@
-const aiService = require('../services/aiService');
-const firebaseService = require('../services/firebaseService');
-
+import aiService from '../services/aiService.js';
+import firebaseService from '../services/firebaseService.js';
 async function generateFixForError(errorData, projectId) {
     console.log("[Fix Agent] Generating fix for error...", errorData.error);
 
@@ -35,4 +34,5 @@ async function generateFixForError(errorData, projectId) {
     };
 }
 
-module.exports = { generateFixForError };
+export { generateFixForError  };
+export default { generateFixForError };

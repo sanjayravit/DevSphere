@@ -1,14 +1,13 @@
-const express = require("express");
+import express from "express";
 const router = express.Router();
-const errorAgent = require("../agents/errorAgent");
-const fixAgent = require("../agents/fixAgent");
-const githubService = require("../services/githubService");
-const firebaseService = require("../services/firebaseService");
-const socketHandler = require("../sockets/socketHandler");
-const vercelService = require("../services/vercelService");
-const firebaseAdmin = require("../firebaseAdmin");
-const crypto = require("crypto");
-
+import errorAgent from "../agents/errorAgent.js";
+import fixAgent from "../agents/fixAgent.js";
+import githubService from "../services/githubService.js";
+import firebaseService from "../services/firebaseService.js";
+import socketHandler from "../sockets/socketHandler.js";
+import vercelService from "../services/vercelService.js";
+import firebaseAdmin from "../firebaseAdmin.js";
+import crypto from "crypto";
 const verifyGithubSignature = (req) => {
     const signature = req.headers['x-hub-signature-256'];
     if (!signature) return false;
@@ -165,4 +164,4 @@ router.post("/", async (req, res) => {
     }
 });
 
-module.exports = router;
+export default router;

@@ -1,10 +1,9 @@
-const express = require("express");
+import express from "express";
 const router = express.Router();
-const auth = require("../middleware/auth");
-const Project = require("../models/Project");
-const Workspace = require("../models/Workspace");
-const MarketplaceItem = require("../models/MarketplaceItem");
-
+import auth from "../middleware/auth.js";
+import Project from "../models/Project.js";
+import Workspace from "../models/Workspace.js";
+import MarketplaceItem from "../models/MarketplaceItem.js";
 // GET /api/analytics
 router.get("/", auth, async (req, res) => {
     try {
@@ -65,5 +64,4 @@ router.get("/", auth, async (req, res) => {
     }
 });
 
-module.exports = router;
-
+export default router;
