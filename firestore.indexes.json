@@ -1,0 +1,27 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "devsphereRuns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    { "collectionGroup": "devsphereRuns", "fieldPath": "proposal", "indexes": [] },
+    { "collectionGroup": "devsphereRuns", "fieldPath": "events", "indexes": [] },
+    { "collectionGroup": "devsphereRuns", "fieldPath": "intent", "indexes": [] },
+    { "collectionGroup": "devsphereRuns", "fieldPath": "plan", "indexes": [] },
+    { "collectionGroup": "devsphereRuns", "fieldPath": "qa", "indexes": [] },
+    { "collectionGroup": "devsphereRuns", "fieldPath": "usage", "indexes": [] },
+    { "collectionGroup": "projects", "fieldPath": "files", "indexes": [] },
+    { "collectionGroup": "projects", "fieldPath": "chatHistory", "indexes": [] },
+    { "collectionGroup": "projects", "fieldPath": "commits", "indexes": [] },
+    { "collectionGroup": "posts", "fieldPath": "text", "indexes": [] },
+    { "collectionGroup": "posts", "fieldPath": "code", "indexes": [] },
+    { "collectionGroup": "posts", "fieldPath": "comments", "indexes": [] },
+    { "collectionGroup": "posts", "fieldPath": "likes", "indexes": [] }
+  ]
+}

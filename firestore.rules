@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All application data is accessed through the authenticated Express API.
+    // Admin SDK access bypasses these rules; its IAM and API ownership checks
+    // remain mandatory. Do not expose Admin credentials to browser clients.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,28 +1,23 @@
 import { Emitter } from '@socket.io/redis-emitter';
 import Redis from 'ioredis';
-let ioInstance = null;
-let emitter = null;
-
-if (process.env.REDIS_URL) {
-  try { emitter = new Emitter(new Redis(process.env.REDIS_URL)); }
-  catch { console.error('Could not initialize Redis Socket.IO emitter.'); }
-}
-
+let ioInstance;
+let emitter;
+let redis;
 export function setSocketServer(io) { ioInstance = io; }
 export const init = setSocketServer;
-export function emitRoomEvent(roomId, event, data) {
-  if (emitter) emitter.to(roomId).emit(event, data);
-  else if (ioInstance) ioInstance.to(roomId).emit(event, data);
+function getEmitter() {
+  if (!emitter && process.env.REDIS_URL) {
+    redis = new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 1 });
+    redis.on('error', () => console.error('Socket.IO event relay is unavailable; use persisted history.'));
+    emitter = new Emitter(redis);
+  }
+  return emitter;
 }
-
-export function emitEvent(roomId, event, data) {
-  if (ioInstance) ioInstance.to(roomId).emit(event, data);
-  else if (emitter) emitter.to(roomId).emit(event, data);
+export function emitRoomEvent(room, event, data) {
+  if (ioInstance) ioInstance.to(room).emit(event, data);
+  else getEmitter()?.to(room).emit(event, data);
 }
-export function emitGlobalEvent(event, data) {
-  if (ioInstance) ioInstance.emit(event, data);
-  else if (emitter) emitter.emit(event, data);
-}
-
-const socketHandler = { init, emitEvent, emitRoomEvent, emitGlobalEvent };
-export default socketHandler;
+export const emitEvent = emitRoomEvent;
+export function emitGlobalEvent() { throw new Error('Global broadcasts of user data are forbidden. Use an authorized room.'); }
+export function closeEmitter() { redis?.disconnect(); redis = null; emitter = null; }
+export default { init, emitEvent, emitRoomEvent, emitGlobalEvent };

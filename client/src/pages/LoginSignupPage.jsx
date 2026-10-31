@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import api from '../services/api';
+import { githubOAuthStartUrl, consumeGithubOAuthFragment } from '../services/githubOAuth';
 import { useAuth } from '../context/AuthContext';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -14,7 +16,7 @@ export const LoginSignupPage = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const [isGithubLoading, setIsGithubLoading] = useState(false);
-    const { login, register, loginWithGoogle, loginWithGithub } = useAuth();
+    const { login, register, loginWithGoogle, loginWithGithub, acceptBackendToken, authError } = useAuth();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
 
@@ -22,6 +24,13 @@ export const LoginSignupPage = () => {
         const err = searchParams.get('error');
         if (err) setError("Authentication failed.");
     }, [searchParams]);
+
+    useEffect(() => {
+        try {
+            const token = consumeGithubOAuthFragment();
+            if (token) acceptBackendToken(token).then(() => navigate('/dashboard', { replace: true })).catch(() => setError('OAuth session was invalid or expired.'));
+        } catch (failure) { setError(failure.message); }
+    }, [acceptBackendToken, navigate]);
 
     const getErrorMessage = (err) => {
         let msg = err.response?.data?.error || err.message || 'Authentication failed. Please try again.';
@@ -42,7 +51,18 @@ export const LoginSignupPage = () => {
         return msg;
     };
 
+    const busy = isSubmitting || isGoogleLoading || isGithubLoading;
+    const handleBackendGithub = async () => {
+        if (busy) return;
+        setIsGithubLoading(true); setError('');
+        try {
+            const response = await api.get('/auth/providers');
+            if (!response.data?.githubOAuth) throw new Error('Backend GitHub OAuth is not configured. Use an available sign-in method.');
+            window.location.assign(githubOAuthStartUrl(api.defaults.baseURL));
+        } catch (failure) { setError(getErrorMessage(failure)); setIsGithubLoading(false); }
+    };
     const handleSocialLogin = async (provider) => {
+        if (busy) return;
         setError('');
         if (provider === 'google') setIsGoogleLoading(true);
         else setIsGithubLoading(true);
@@ -61,6 +81,7 @@ export const LoginSignupPage = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (busy) return;
         setError('');
 
         if (!formData.email || !formData.password || (!isLogin && !formData.name)) {
@@ -107,13 +128,13 @@ export const LoginSignupPage = () => {
                     </p>
                 </div>
 
-                {error && (
-                    <motion.div
+                {(error || authError) && (
+                    <motion.div role="alert"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm text-center"
                     >
-                        {error}
+                        {error || authError}
                     </motion.div>
                 )}
 
@@ -161,6 +182,7 @@ export const LoginSignupPage = () => {
                     <Button
                         type="submit"
                         className="w-full mt-6"
+                        disabled={busy}
                         isLoading={isSubmitting}
                     >
                         {isLogin ? 'Sign In' : 'Sign Up'}
@@ -181,6 +203,7 @@ export const LoginSignupPage = () => {
                         variant="secondary"
                         onClick={() => handleSocialLogin('google')}
                         className="flex-1 bg-white text-dark-900 hover:bg-gray-100 border-none flex items-center justify-center gap-2"
+                        disabled={busy}
                         isLoading={isGoogleLoading}
                     >
                         <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -195,11 +218,14 @@ export const LoginSignupPage = () => {
                         variant="secondary"
                         onClick={() => handleSocialLogin('github')}
                         className="flex-1 bg-[#24292e] text-white hover:bg-[#2f363d] border-white/10 flex items-center justify-center gap-2"
+                        disabled={busy}
                         isLoading={isGithubLoading}
                     >
                         <Github size={18} /> GitHub
                     </Button>
                 </div>
+
+                <button type="button" disabled={busy} onClick={handleBackendGithub} className="mt-3 w-full text-xs text-gray-400 hover:text-white disabled:opacity-50">GitHub via server OAuth</button>
 
                 <div className="mt-8 text-center">
                     <button

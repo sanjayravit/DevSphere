@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { useLocation } from 'react-router-dom';
 import { Activity, ArrowUpRight, Bot, Check, ChevronDown, CircleAlert, Clock3, GitBranch, GitCommitHorizontal, LoaderCircle, Play, Shield, ShieldAlert, ShieldCheck, Sparkles, Workflow, X } from 'lucide-react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { socketOrigin } from '../services/socket';
 
 const MODES = [
   { id: 'manual', label: 'Manual', description: 'Suggestions only' },
@@ -20,7 +23,9 @@ function Panel({ title, icon: Icon, children, action }) {
 }
 
 export const V2WorkspacePage = () => {
-  const [input, setInput] = useState('');
+  const location = useLocation();
+  const queryRunId = new URLSearchParams(location.search).get('runId');
+  const [input, setInput] = useState(() => new URLSearchParams(window.location.search).get('intent')?.slice(0, 12000) || '');
   const [mode, setMode] = useState('assisted');
   const [history, setHistory] = useState([]);
   const [active, setActive] = useState(null);
@@ -29,73 +34,110 @@ export const V2WorkspacePage = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
-  const token = useMemo(() => localStorage.getItem('token'), []);
-
+  const session = useAuth();
+  const token = session?.token || localStorage.getItem('token');
+  const ownerKey = session?.user?.id || token || 'anonymous';
+  const owner = useRef(null); if (owner.current?.key !== ownerKey) owner.current = { key: ownerKey };
+  const historyRequest = useRef(0); const detailRequest = useRef(0);
+  const activeId = useRef(null);
+  const requestId = useRef(null);
+  const mounted = useRef(true);
   const refreshHistory = useCallback(async () => {
-    try { const response = await api.get('/v2/runs'); setHistory(response.data.runs || []); }
-    catch (err) { setError(err.response?.data?.error || 'Unable to load DevSphere V2 run history.'); }
+    const scope = owner.current; const request = ++historyRequest.current;
+    try { const response = await api.get('/v2/runs'); if (mounted.current && scope === owner.current && request === historyRequest.current) setHistory(response.data.runs || []); }
+    catch (err) { if (mounted.current && scope === owner.current && request === historyRequest.current) setError(err.response?.data?.error || 'Unable to load DevSphere V2 run history.'); }
   }, []);
-
-  useEffect(() => { refreshHistory(); }, [refreshHistory]);
+  const fetchDetails = useCallback(async id => {
+    const scope = owner.current; const request = ++detailRequest.current;
+    const response = await api.get(`/v2/runs/${id}`);
+    if (mounted.current && scope === owner.current && activeId.current === id && request === detailRequest.current) {
+      setActive(response.data.run);
+      setLiveEvents(previous => [...new Map([...previous.filter(event => event.runId === id), ...(response.data.run.events || [])].map(event => [`${event.at}:${event.step}:${event.status}`, event])).values()].sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-100));
+    }
+  }, []);
+  useEffect(() => {
+    mounted.current = true; activeId.current = null; requestId.current = null;
+    setActive(null); setHistory([]); setLiveEvents([]); setError(''); setLoading(false); setActionLoading(false);
+    refreshHistory();
+    return () => { mounted.current = false; };
+  }, [ownerKey, refreshHistory, fetchDetails]);
+  useEffect(() => {
+    const scope = owner.current;
+    if (queryRunId && /^[A-Za-z0-9_-]{1,128}$/.test(queryRunId)) {
+      activeId.current = queryRunId; requestId.current = null; setActive(null); setLiveEvents([]); setError('');
+      fetchDetails(queryRunId).catch(() => { if (mounted.current && owner.current === scope && activeId.current === queryRunId) setError('Could not load the selected run.'); });
+    }
+  }, [queryRunId, ownerKey, fetchDetails]);
   useEffect(() => {
     if (!token) return undefined;
-    const endpoint = import.meta.env.VITE_SOCKET_URL || window.location.origin;
-    const socket = io(endpoint, { path: '/socket.io', auth: { token }, transports: ['websocket', 'polling'], reconnection: true, timeout: 10_000 });
-    const onUpdate = event => {
-      if (active?.id && event.runId !== active.id) return;
-      setLiveEvents(previous => [event, ...previous].slice(0, 60));
+    const socket = io(socketOrigin(), { path: '/socket.io', auth: { token }, transports: ['websocket', 'polling'], reconnection: true, timeout: 10_000 });
+    const refreshActive = () => {
+      refreshHistory();
+      if (activeId.current) fetchDetails(activeId.current).catch(() => {});
     };
-    socket.on('connect', () => setConnected(true));
+    socket.on('connect', () => { setConnected(true); refreshActive(); });
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', () => setConnected(false));
-    socket.on('devsphere:update', onUpdate);
-    return () => { socket.off('devsphere:update', onUpdate); socket.disconnect(); };
-  }, [token, active?.id]);
-
-  const selectRun = async run => {
-    setError('');
-    try { const response = await api.get(`/v2/runs/${run.id}`); setActive(response.data.run); setLiveEvents(response.data.run.events || []); }
-    catch (err) { setError(err.response?.data?.error || 'Could not load this run.'); }
+    socket.on('devsphere:update', event => {
+      if (!event || typeof event.runId !== 'string') return;
+      if (requestId.current && event.requestId === requestId.current && !activeId.current) {
+        activeId.current = event.runId; setActive({ id: event.runId, status: 'running' });
+      }
+      if (event.runId !== activeId.current) return;
+      setLiveEvents(previous => [...previous.filter(item => !(item.at === event.at && item.step === event.step && item.status === event.status)), event].slice(-100));
+      if (event.status === 'failed') setError(event.detail?.message || 'The run failed. Inspect the recorded history before retrying.');
+      if (['decision', 'approval', 'github-pr', 'orchestrator', 'deployment'].includes(event.step) && event.status !== 'running') refreshActive();
+    });
+    return () => { socket.disconnect(); setConnected(false); };
+  }, [token, refreshHistory, fetchDetails]);
+  const selectRun = async item => {
+    const scope = owner.current;
+    setError(''); requestId.current = null; activeId.current = item.id; setActive(item); setLiveEvents([]);
+    try { await fetchDetails(item.id); }
+    catch (err) { if (mounted.current && owner.current === scope && activeId.current === item.id) setError(err.response?.data?.error || 'Could not load this run.'); }
   };
-
   const runIntent = async event => {
     event.preventDefault();
     if (input.trim().length < 8) { setError('Describe the change in at least 8 characters.'); return; }
-    setLoading(true); setError(''); setLiveEvents([]); setActive(null);
+    setLoading(true); setError(''); setLiveEvents([]); setActive(null); activeId.current = null;
+    const correlation = window.crypto.randomUUID(); requestId.current = correlation;
+    const scope = owner.current;
+    const focused = () => mounted.current && owner.current === scope && requestId.current === correlation;
     try {
-      const response = await api.post('/v2/run', { input: input.trim(), mode });
-      setActive({ id: response.data.runId, ...response.data });
-      await refreshHistory();
-      await selectRun({ id: response.data.runId });
+      const response = await api.post('/v2/run', { input: input.trim(), mode, requestId: correlation });
+      if (focused()) {
+        activeId.current = response.data.runId; setActive({ id: response.data.runId, ...response.data });
+        await fetchDetails(response.data.runId);
+      }
+      if (owner.current === scope) await refreshHistory();
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not start the run. Check backend configuration and try again.');
-      if (err.response?.data?.runId) { await refreshHistory(); try { await selectRun({ id: err.response.data.runId }); } catch { /* Keep API error visible. */ } }
-    } finally { setLoading(false); }
+      if (!focused()) return;
+      const message = err.response?.data?.error || 'The run request failed or timed out. Check run history before retrying; an isolated branch may already exist.';
+      if (err.response?.data?.runId) {
+        activeId.current = err.response.data.runId;
+        await fetchDetails(activeId.current).catch(() => {});
+      }
+      await refreshHistory(); setError(message);
+    } finally {
+      if (requestId.current === correlation) requestId.current = null;
+      if (mounted.current && owner.current === scope) setLoading(false);
+    }
   };
-
-  const approve = async () => {
-    if (!active?.approvalHash) return;
+  const act = async (action, body) => {
+    const id = activeId.current; const scope = owner.current;
+    if (!id || actionLoading) return;
     setActionLoading(true); setError('');
-    try { const response = await api.post(`/v2/runs/${active.runId || active.id}/approve`, { approvalHash: active.approvalHash }); setActive(previous => ({ ...previous, ...response.data })); await selectRun({ id: active.runId || active.id }); await refreshHistory(); }
-    catch (err) { setError(err.response?.data?.error || 'Approval could not be completed.'); await refreshHistory(); }
-    finally { setActionLoading(false); }
+    try { await api.post(`/v2/runs/${id}/${action}`, body); if (mounted.current && owner.current === scope) { await fetchDetails(id); await refreshHistory(); } }
+    catch (err) {
+      if (!mounted.current || owner.current !== scope) return;
+      await fetchDetails(id).catch(() => {}); await refreshHistory();
+      if (mounted.current && activeId.current === id) setError(err.response?.data?.error || 'The action failed or timed out. Inspect the recorded run before retrying.');
+    } finally { if (mounted.current && owner.current === scope) setActionLoading(false); }
   };
+  const approve = () => active?.approvalHash && act('approve', { approvalHash: active.approvalHash });
+  const reject = () => active?.approvalHash && act('reject', { approvalHash: active.approvalHash });
+  const requestDeployment = () => act('deploy');
 
-  const reject = async () => {
-    setActionLoading(true); setError('');
-    try { await api.post(`/v2/runs/${active.runId || active.id}/reject`); await selectRun({ id: active.runId || active.id }); await refreshHistory(); }
-    catch (err) { setError(err.response?.data?.error || 'Could not reject this proposal.'); }
-    finally { setActionLoading(false); }
-  };
-
-  const requestDeployment = async () => {
-    setActionLoading(true); setError('');
-    try { await api.post(`/v2/runs/${active.runId || active.id}/deploy`); await selectRun({ id: active.runId || active.id }); await refreshHistory(); }
-    catch (err) { setError(err.response?.data?.error || 'Deployment verification failed.'); }
-    finally { setActionLoading(false); }
-  };
-
-  const run = active?.proposal || active;
   const currentEvents = (liveEvents.length ? liveEvents : active?.events || []).filter(event => !active?.id || event.runId === active.id);
   const proposal = active?.proposal;
   const pending = active?.status === 'pending_approval' && active?.approval === 'pending';
@@ -144,9 +186,10 @@ export const V2WorkspacePage = () => {
             </div>
             <div className="rounded-xl border border-white/[0.06] bg-black/20 p-3 text-xs leading-5 text-slate-400"><b className="text-slate-200">Policy explanation:</b> {proposal.decision?.reason || active.decision?.reason || 'Proposal pending analysis.'}</div>
             {proposal.design?.suggestions?.length > 0 && <ul className="space-y-1 text-xs text-slate-400">{proposal.design.suggestions.map((suggestion, index) => <li key={index}>• {suggestion}</li>)}</ul>}
+            <p className="break-all text-[10px] text-slate-500">Repository: {proposal.repository} · Base: {proposal.defaultBranch}@{proposal.baseSha?.slice(0, 12)}{active.approvalHash && <> · Approval hash: <code>{active.approvalHash}</code></>}</p>
             <div className="flex flex-wrap gap-2">
               {pending && <><button disabled={actionLoading} onClick={approve} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-400 disabled:opacity-50"><Check size={15} />{actionLoading ? 'Processing…' : 'Approve exact proposal'}</button><button disabled={actionLoading} onClick={reject} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-white/5"><X size={14} />Reject</button></>}
-              {active.pullNumber && ['pull_request', 'deployment_skipped', 'deployment_failed'].includes(active.status) && <button disabled={actionLoading} onClick={requestDeployment} className="inline-flex items-center gap-2 rounded-lg border border-indigo-400/25 bg-indigo-400/10 px-4 py-2.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-400/15"><ArrowUpRight size={15} />Verify merge & deploy</button>}
+              {active.pullNumber && ['pull_request', 'deployment_skipped', 'deployment_failed', 'deployment_pending'].includes(active.status) && <button disabled={actionLoading} onClick={requestDeployment} className="inline-flex items-center gap-2 rounded-lg border border-indigo-400/25 bg-indigo-400/10 px-4 py-2.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-400/15"><ArrowUpRight size={15} />{active.status === 'deployment_pending' ? 'Refresh deployment status' : 'Verify merge & deploy'}</button>}
             </div>
           </div> : <p className="text-sm text-slate-500">The orchestrator will populate intent, plan, QA, and decision details as agents complete.</p>}
         </Panel>
@@ -166,7 +209,7 @@ export const V2WorkspacePage = () => {
 
       <div className="space-y-5">
         <Panel title="Orchestrator timeline" icon={Workflow} action={<span className="text-[10px] text-slate-500">{currentEvents.length} events</span>}>
-          {currentEvents.length ? <ol className="relative ml-2 space-y-0 border-l border-white/10 pl-5">{[...currentEvents].reverse().map((event, index) => <li key={`${event.at || ''}-${event.step}-${index}`} className="relative pb-5 last:pb-0"><span className={`absolute -left-[25px] top-1 h-2 w-2 rounded-full ring-4 ring-[#11141e] ${event.status === 'failed' ? 'bg-rose-400' : event.status === 'running' ? 'bg-cyan-300' : 'bg-indigo-300'}`} /><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold capitalize text-slate-200">{event.step?.replaceAll('-', ' ')}</span><span className={`text-[10px] uppercase ${statusColor(event.status)}`}>{event.status}</span></div><div className="mt-1 text-[10px] text-slate-500">{dateText(event.at)}</div>{event.detail?.message && <p className="mt-1 text-[11px] text-slate-400">{event.detail.message}</p>}</li>)}</ol> : <p className="text-xs text-slate-500">Agent progress appears here for this run.</p>}
+          {currentEvents.length ? <ol className="relative ml-2 space-y-0 border-l border-white/10 pl-5">{currentEvents.map((event, index) => <li key={`${event.at || ''}-${event.step}-${index}`} className="relative pb-5 last:pb-0"><span className={`absolute -left-[25px] top-1 h-2 w-2 rounded-full ring-4 ring-[#11141e] ${event.status === 'failed' ? 'bg-rose-400' : event.status === 'running' ? 'bg-cyan-300' : 'bg-indigo-300'}`} /><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold capitalize text-slate-200">{event.step?.replaceAll('-', ' ')}</span><span className={`text-[10px] uppercase ${statusColor(event.status)}`}>{event.status}</span></div><div className="mt-1 text-[10px] text-slate-500">{dateText(event.at)}</div>{event.detail?.message && <p className="mt-1 text-[11px] text-slate-400">{event.detail.message}</p>}</li>)}</ol> : <p className="text-xs text-slate-500">Agent progress appears here for this run.</p>}
         </Panel>
 
         <Panel title="Repository delivery" icon={GitCommitHorizontal}>

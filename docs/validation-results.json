@@ -1,0 +1,127 @@
+{
+  "date": "2026-10-31",
+  "timestamp": "2026-10-31T19:09:39.720876+00:00",
+  "repository": "sanjayravit/DevSphere",
+  "branch": "arena/a75b6061-devsphere",
+  "sourceBase": "0149ec9ad0d06363df89f363d261e31731b6a548",
+  "node": "22.22.3",
+  "npm": "10.9.8",
+  "checks": [
+    {
+      "name": "syntax",
+      "command": "npm run check:server",
+      "exitCode": 0,
+      "seconds": 1.885,
+      "status": "PASS",
+      "localLog": "/home/user/devsphere-qa/syntax-final.log"
+    },
+    {
+      "name": "backend",
+      "command": "npm run test:server",
+      "exitCode": 0,
+      "seconds": 11.307,
+      "status": "PASS",
+      "localLog": "/home/user/devsphere-qa/backend-final.log"
+    },
+    {
+      "name": "frontend",
+      "command": "npm test --prefix client -- --run",
+      "exitCode": 0,
+      "seconds": 16.517,
+      "status": "PASS",
+      "localLog": "/home/user/devsphere-qa/frontend-final.log"
+    },
+    {
+      "name": "build",
+      "command": "npm run build",
+      "exitCode": 0,
+      "seconds": 2.245,
+      "status": "PASS",
+      "localLog": "/home/user/devsphere-qa/build-final.log"
+    },
+    {
+      "name": "diff",
+      "command": "git diff --check",
+      "exitCode": 0,
+      "seconds": 0.02,
+      "status": "PASS",
+      "localLog": "/home/user/devsphere-qa/diff-final.log"
+    }
+  ],
+  "server": {
+    "filesSyntaxChecked": 66,
+    "tests": 130,
+    "passed": 130,
+    "failed": 0,
+    "canceled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "client": {
+    "testFiles": 14,
+    "tests": 48,
+    "passed": 48,
+    "failed": 0
+  },
+  "build": {
+    "vite": "8.3.5",
+    "modules": 3163,
+    "mainChunkKB": 966.39,
+    "mainChunkGzipKB": 298.13,
+    "largeChunkWarning": true
+  },
+  "dependencyAudits": {
+    "root": {
+      "info": 0,
+      "low": 0,
+      "moderate": 6,
+      "high": 0,
+      "critical": 0,
+      "total": 6
+    },
+    "server": {
+      "info": 0,
+      "low": 0,
+      "moderate": 6,
+      "high": 0,
+      "critical": 0,
+      "total": 6
+    },
+    "client": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "socket": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "auditFixDryRun": {
+    "changedPackages": 0,
+    "remainingModerate": 6,
+    "unsafeOverridesApplied": false
+  },
+  "integrationBoundary": {
+    "applicationProviderWrites": "MOCKED",
+    "githubRepositoryDiscovery": "LIVE_READ_ONLY",
+    "firebase": "TRANSACTIONAL_TEST_DOUBLE",
+    "httpAndSocketIO": "REAL_LOCAL_NETWORK",
+    "pdfAndNativeGit": "REAL_LOCAL",
+    "browser": "JSDOM",
+    "liveReleaseCertification": "BLOCKED"
+  },
+  "releaseRecommendation": "BLOCKED",
+  "notes": [
+    "Measured after OAuth browser-nonce, Vercel project binding and monitoring-unmount fixes.",
+    "Local application source tests; check the PR for Actions on exact HEAD.",
+    "No actual merge/production deployment or hosted rules/index/IAM change authorized or performed."
+  ]
+}

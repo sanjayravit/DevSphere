@@ -3,22 +3,48 @@ import { Search, Bell, Command, ChevronDown, User, Settings, LogOut, Sparkles, G
 import { useAuth } from '../../context/AuthContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useNavigate } from 'react-router-dom';
-
-const MOCK_NOTIFICATIONS = [
-    { id: 1, type: 'ai', icon: Sparkles, title: 'AI optimized your auth module', time: '2 min ago', unread: true },
-    { id: 2, type: 'collab', icon: MessageSquare, title: 'New comment on Dashboard.jsx', time: '15 min ago', unread: true },
-    { id: 3, type: 'git', icon: GitCommit, title: 'Branch main updated with 3 commits', time: '1 hr ago', unread: false },
-    { id: 4, type: 'system', icon: Zap, title: 'Build succeeded — 0 warnings', time: '3 hr ago', unread: false },
-];
+import api from '../../services/api';
+import socket from '../../services/socket';
 
 export const Topbar = ({ onMenuClick }) => {
-    const { user, logout } = useAuth();
+    const { user, token, logout } = useAuth();
     const { activeWorkspace } = useWorkspace();
     const navigate = useNavigate();
     const [showNotifications, setShowNotifications] = useState(false);
     const notifRef = useRef(null);
 
-    const unreadCount = MOCK_NOTIFICATIONS.filter(n => n.unread).length;
+    const [notifications, setNotifications] = useState([]);
+    const [notificationError, setNotificationError] = useState('');
+    const [notificationLoading, setNotificationLoading] = useState(false);
+    const [notificationLive, setNotificationLive] = useState(false);
+    const [notificationVersion, setNotificationVersion] = useState(0);
+    useEffect(() => {
+        setNotifications([]); setNotificationError('');
+        if (!user?.id || !token) return undefined;
+        let timer;
+        const connected = () => { setNotificationLive(true); setNotificationVersion(value => value + 1); };
+        const disconnected = () => setNotificationLive(false);
+        const changed = event => {
+            if (!event?.runId || event.status === 'running' || !['decision', 'approval', 'github-pr', 'orchestrator', 'deployment'].includes(event.step)) return;
+            clearTimeout(timer); timer = setTimeout(() => setNotificationVersion(value => value + 1), 200);
+        };
+        socket.on('connect', connected); socket.on('disconnect', disconnected); socket.on('connect_error', disconnected); socket.on('devsphere:update', changed);
+        if (socket.connected) connected(); else socket.connect();
+        return () => { clearTimeout(timer); socket.off('connect', connected); socket.off('disconnect', disconnected); socket.off('connect_error', disconnected); socket.off('devsphere:update', changed); };
+    }, [user?.id, token]);
+    const unreadCount = notifications.filter(item => item.unread).length;
+    useEffect(() => {
+        if (!user?.id || !token) return undefined;
+        let active = true; const controller = new AbortController();
+        setNotificationLoading(true);
+        api.get('/v2/runs?limit=5', { signal: controller.signal }).then(response => {
+            if (!active) return;
+            if (!Array.isArray(response.data.runs)) throw new Error('Invalid notification data.');
+            setNotificationError('');
+            setNotifications(response.data.runs.map(run => ({ id: run.id, icon: run.status === 'pending_approval' ? Sparkles : GitCommit, title: `${run.status.replaceAll('_', ' ')}: ${run.issue || run.input}`, time: new Date(run.updatedAt || run.createdAt).toLocaleString(), unread: run.status === 'pending_approval' })));
+        }).catch(() => { if (active) setNotificationError('Run notifications are unavailable. Sign in again if the session expired; previous results may be outdated.'); }).finally(() => { if (active) setNotificationLoading(false); });
+        return () => { active = false; controller.abort(); };
+    }, [showNotifications, user?.id, token, notificationVersion]);
 
     // Close dropdown on click outside
     useEffect(() => {
@@ -74,6 +100,7 @@ export const Topbar = ({ onMenuClick }) => {
                 {/* Notification Bell */}
                 <div ref={notifRef} className="relative">
                     <button
+                        aria-label="Run notifications"
                         onClick={() => setShowNotifications(prev => !prev)}
                         className="relative p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 hover:scale-110 hover:shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-all duration-300"
                     >
@@ -93,7 +120,7 @@ export const Topbar = ({ onMenuClick }) => {
                             }`}
                     >
                         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-                            <span className="text-sm font-semibold text-white">Notifications</span>
+                            <span className="text-sm font-semibold text-white">Notifications <span className="text-[10px] font-normal text-gray-500">{notificationLive ? 'Live' : 'Live updates offline'}</span></span>
                             {unreadCount > 0 && (
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-primary-400 bg-primary-500/10 px-2 py-0.5 rounded-full">
                                     {unreadCount} new
@@ -101,9 +128,12 @@ export const Topbar = ({ onMenuClick }) => {
                             )}
                         </div>
                         <div className="max-h-80 overflow-y-auto custom-scrollbar">
-                            {MOCK_NOTIFICATIONS.map((n) => (
+                            {notificationError && <p role="alert" className="p-4 text-xs text-red-300">{notificationError}</p>}
+                            {!notifications.length && !notificationError && <p className="p-4 text-xs text-gray-400">{notificationLoading ? 'Loading run notifications…' : 'No run notifications yet.'}</p>}
+                            {notifications.map((n) => (
                                 <div
                                     key={n.id}
+                                    onClick={() => { setShowNotifications(false); navigate(`/v2?runId=${n.id}`); }}
                                     className={`flex items-start gap-3 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer border-b border-white/5 last:border-0 ${n.unread ? 'bg-primary-500/5' : ''
                                         }`}
                                 >
@@ -124,7 +154,7 @@ export const Topbar = ({ onMenuClick }) => {
                             ))}
                         </div>
                         <div className="px-4 py-2.5 border-t border-white/5 text-center">
-                            <button className="text-xs text-primary-400 hover:text-primary-300 font-medium transition-colors">
+                            <button onClick={() => { setShowNotifications(false); navigate("/v2"); }} className="text-xs text-primary-400 hover:text-primary-300 font-medium transition-colors">
                                 View all notifications
                             </button>
                         </div>
@@ -142,7 +172,7 @@ export const Topbar = ({ onMenuClick }) => {
                         <span className="text-sm font-medium text-white truncate max-w-[120px] group-hover:text-primary-300 transition-colors">{user?.name || 'Developer'}</span>
                         <div className="flex items-center gap-1 text-[10px] text-primary-400 font-semibold uppercase tracking-wider">
                             <Sparkles size={10} />
-                            Pro Account
+                            Developer
                         </div>
                     </div>
                     <div className="relative w-9 h-9 flex items-center justify-center">

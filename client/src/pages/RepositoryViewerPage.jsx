@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { validGithubOwner, validGithubRepo, encodeGithubPath, getPublicGithub, decodeGithubFile, githubError } from '../services/publicGithub';
 import Editor from '@monaco-editor/react';
 import { AnimatedCard } from '../components/ui/Card';
 import { Folder, File, Code, ArrowLeft, Loader2, Github } from 'lucide-react';
@@ -17,48 +17,44 @@ export const RepositoryViewerPage = () => {
     const [fileContent, setFileContent] = useState('');
     const [isLoadingFile, setIsLoadingFile] = useState(false);
 
+    const [error, setError] = useState('');
+    const requests = useRef({ directory: null, file: null });
+    const repository = useRef(''); repository.current = JSON.stringify([owner, repoName]);
     useEffect(() => {
+        setFileTree([]); setCurrentPath(''); setSelectedFile(null); setFileContent(''); setError('');
         fetchDirectory('');
-        // eslint-disable-next-line
+        return () => { requests.current.directory?.abort(); requests.current.file?.abort(); };
     }, [owner, repoName]);
 
-    const fetchDirectory = async (path) => {
-        setIsLoadingTree(true);
+    const fetchDirectory = async path => {
+        requests.current.directory?.abort(); requests.current.file?.abort();
+        const controller = new AbortController(); requests.current.directory = controller;
+        const key = repository.current;
+        setIsLoadingTree(true); setSelectedFile(null); setFileContent(''); setError('');
         try {
-            const url = path
-                ? `https://api.github.com/repos/${owner}/${repoName}/contents/${path}`
-                : `https://api.github.com/repos/${owner}/${repoName}/contents`;
-
-            const res = await axios.get(url);
-
-            // Sort folders first, then files
-            const sortedItems = res.data.sort((a, b) => {
-                if (a.type === b.type) return a.name.localeCompare(b.name);
-                return a.type === 'dir' ? -1 : 1;
-            });
-
-            setFileTree(sortedItems);
+            if (!validGithubOwner(owner) || !validGithubRepo(repoName)) throw new Error('Invalid repository name.');
+            const items = await getPublicGithub(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/contents${path ? `/${encodeGithubPath(path)}` : ''}`, controller.signal);
+            if (controller.signal.aborted || repository.current !== key) return;
+            if (!Array.isArray(items) || items.length > 1_000 || items.some(item => !['dir', 'file', 'symlink', 'submodule'].includes(item?.type) || typeof item.name !== 'string' || typeof item.path !== 'string')) throw new Error('Invalid directory response.');
+            setFileTree([...items].sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
             setCurrentPath(path);
-        } catch (err) {
-            console.error('Error fetching directory:', err);
-        } finally {
-            setIsLoadingTree(false);
-        }
+        } catch (failure) {
+            if (!controller.signal.aborted && repository.current === key) { setFileTree([]); setError(githubError(failure)); }
+        } finally { if (!controller.signal.aborted && repository.current === key) setIsLoadingTree(false); }
     };
-
-    const fetchFileContent = async (fileNode) => {
-        setIsLoadingFile(true);
-        setSelectedFile(fileNode.name);
+    const fetchFileContent = async file => {
+        requests.current.file?.abort();
+        const controller = new AbortController(); requests.current.file = controller;
+        const key = repository.current;
+        setIsLoadingFile(true); setSelectedFile(file.name); setFileContent(''); setError('');
         try {
-            const res = await axios.get(fileNode.download_url);
-            // Handle raw content, ensuring it's text
-            setFileContent(typeof res.data === 'object' ? JSON.stringify(res.data, null, 2) : String(res.data));
-        } catch (err) {
-            console.error('Error fetching file content:', err);
-            setFileContent('// Error loading file content. It might be binary or unavailable.');
-        } finally {
-            setIsLoadingFile(false);
-        }
+            if (!Number.isInteger(file.size) || file.size < 0 || file.size > 250_000) throw new Error('Only UTF-8 text files up to 250 KB can be previewed.');
+            // Use the canonical GitHub Contents API, never a response-supplied download URL.
+            const data = await getPublicGithub(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}/contents/${encodeGithubPath(file.path)}`, controller.signal);
+            if (!controller.signal.aborted && repository.current === key) setFileContent(decodeGithubFile(data));
+        } catch (failure) {
+            if (!controller.signal.aborted && repository.current === key) setError(failure.response ? githubError(failure) : failure.message);
+        } finally { if (!controller.signal.aborted && repository.current === key) setIsLoadingFile(false); }
     };
 
     const handleItemClick = (item) => {
@@ -94,9 +90,11 @@ export const RepositoryViewerPage = () => {
 
     return (
         <div className="h-[calc(100vh-100px)] flex flex-col gap-4">
+            {error && <div role="alert" className="p-3 text-red-300 bg-red-950 rounded-lg">{error}</div>}
             <div className="flex items-center justify-between pb-2 border-b border-white/10 shrink-0">
                 <div className="flex items-center gap-4">
                     <button
+                        aria-label="Back to parent directory"
                         onClick={handleGoBack}
                         className="p-2 hover:bg-white/5 text-gray-400 hover:text-white rounded-lg transition-colors border border-transparent hover:border-white/10"
                     >
@@ -130,7 +128,7 @@ export const RepositoryViewerPage = () => {
                             <div className="space-y-1">
                                 {fileTree.map((item) => (
                                     <button
-                                        key={item.sha}
+                                        key={item.path}
                                         onClick={() => handleItemClick(item)}
                                         className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left
                                             ${selectedFile === item.name
@@ -146,7 +144,7 @@ export const RepositoryViewerPage = () => {
                                         <span className="truncate">{item.name}</span>
                                     </button>
                                 ))}
-                                {fileTree.length === 0 && (
+                                {fileTree.length === 0 && !error && (
                                     <div className="text-center text-gray-500 text-sm mt-4">Empty Directory</div>
                                 )}
                             </div>

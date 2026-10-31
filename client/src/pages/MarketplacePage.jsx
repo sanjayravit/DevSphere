@@ -8,10 +8,9 @@ import { Button } from '../components/ui/Button';
 export const MarketplacePage = () => {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
     const [installingId, setInstallingId] = useState(null);
-    const { activeProject } = useWorkspace(); // If in a specific project context, we can extract this. For SaaS we might just pick the global active one or show a selector. Currently, installing might require knowing the active project.
-
-    // We will assume `activeProject` is globally stored or we show a dropdown. For now, assume null installs globally or fails if no project active.
+    const { activeProject, projects, setActiveProject } = useWorkspace();
 
     useEffect(() => {
         fetchItems();
@@ -20,16 +19,9 @@ export const MarketplacePage = () => {
     const fetchItems = async () => {
         try {
             const res = await api.get('/marketplace');
-            if (res.data.length === 0) {
-                // Auto seed on mount for demo
-                await api.post('/marketplace/seed');
-                const seeded = await api.get('/marketplace');
-                setItems(seeded.data);
-            } else {
-                setItems(res.data);
-            }
+            setItems(res.data); setError('');
         } catch (err) {
-            console.error(err);
+            setError('The marketplace catalogue is unavailable.');
         } finally {
             setLoading(false);
         }
@@ -42,8 +34,9 @@ export const MarketplacePage = () => {
 
         setInstallingId(id);
         try {
-            await api.post(`/marketplace/${id}/install`, { projectId: activeProject?.id });
-            alert("Successfully installed into your active project workspace.");
+            const response = await api.post(`/marketplace/${id}/install`, { projectId: activeProject?.id });
+            if (response.data.project) setActiveProject(response.data.project);
+            alert(response.data.message);
             fetchItems(); // refresh downloads count
         } catch (err) {
             alert(err.response?.data?.error || "Installation failed.");
@@ -73,6 +66,14 @@ export const MarketplacePage = () => {
                 </div>
             </div>
 
+            <label className="mb-6 block text-sm text-gray-400">Install into project
+                <select aria-label="Install into project" value={activeProject?.id || ''} onChange={event => setActiveProject(projects.find(project => project.id === event.target.value) || null)} className="ml-3 rounded-lg bg-dark-800 p-2 text-white">
+                    <option value="">Download only</option>
+                    {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+            </label>
+            {error && <p role="alert" className="mb-4 text-red-300">{error}</p>}
+            {!loading && !error && !items.length && <p className="text-gray-400">No marketplace items have been published yet.</p>}
             {loading ? (
                 <div className="flex items-center justify-center py-20">
                     <div className="w-12 h-12 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin" />
@@ -92,7 +93,7 @@ export const MarketplacePage = () => {
                                 <span className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold rounded bg-dark-900 border border-white/5 text-gray-300">
                                     {item.type}
                                 </span>
-                                {item.tags.map(t => (
+                                {(item.tags || []).map(t => (
                                     <span key={t} className="px-2 py-1 text-[10px] uppercase tracking-wider font-semibold rounded bg-primary-500/10 text-primary-400">
                                         {t}
                                     </span>
