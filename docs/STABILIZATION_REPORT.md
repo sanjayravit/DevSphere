@@ -28,6 +28,18 @@ Machine-readable results: [validation-results.json](validation-results.json). Fu
 
 Fresh deterministic root/client, backend and socket-launcher installs also passed. The CI workflow installs all four lockfiles, uses Node 22.22.3, read-only repository permissions and the same four required commands. **Remote Actions must be checked on the stabilization PR's exact HEAD**; a successful historical `main` run is not evidence for this patch. The final PR handoff records the actual head/check results rather than embedding a self-referential commit SHA here.
 
+### Live delivery/check evidence (after the local run)
+
+The real stabilization [PR #2](https://github.com/sanjayravit/DevSphere/pull/2) targets discovered default `main`. For functional source commit `2a4cc3d2e664aef48513ba65c99a8b3c752ec8bc`:
+
+- **PASS — push CI:** [run 41233237266](https://github.com/sanjayravit/DevSphere/actions/runs/41233237266), all four installs and required checks succeeded.
+- **PASS — PR CI:** [run 41233279017](https://github.com/sanjayravit/DevSphere/actions/runs/41233279017), same gates succeeded. GitHub also reported the independent **GitGuardian Security Checks** as passing.
+- **PASS, limited to provider-reported Preview delivery:** the repository's **existing Vercel Git integration** automatically created deployment `7463175576`. GitHub's deployment metadata identifies **`environment: Preview`, `production_environment: false`**, with provider status `success`. [Provider deployment details](https://vercel.com/sanjayravit7-2664s-projects/dev-sphere/EuWkFMRhkzHEoUi8JzKcFFD342k4).
+- This automatic non-production Preview is **not** application-driven deployment testing, a verified runtime/health/browser check, a merged-default CI deployment or production authorization. No direct Preview endpoint smoke test was performed; restricted outbound access does not include its host. All live application-provider certification blockers below remain.
+- Actions reported non-failing maintenance warnings: the v4 checkout/setup actions target Node 20 and GitHub forces their action runtime to Node 24; `ubuntu-latest` is migrating to Ubuntu 26. The application toolchain actually tested remains Node 22.22.3. Review supported action pins/runner-image policy separately; these warnings were not suppressed.
+
+The follow-up commit records this evidence **without functional changes**. Verify its exact-head checks on the PR; the final handoff records that result. No production deployment or default-branch mutation was performed.
+
 Tests remain enabled; no `skip`/`todo`/`only` test annotations or disabled safety gates were added. An additional external ESLint `no-undef` scan passed, but it is not a new project lint gate or a claim that the existing autofixing lint script is clean.
 
 ## 2. Workflow acceptance matrix
@@ -162,7 +174,7 @@ The monitoring-unmount regression reproduced one unwanted `io()` call after unmo
 | OpenAI | Installed SDK, actual request construction/Responses stages, schemas, budgets and error handling; deterministic mocked HTTP transport. | Live model, paid usage, account access, service-side latency/limits or output quality. |
 | Firebase | Actual models/services/middleware and singleton; transactional in-memory Firestore double for ownership/claims/history. | Hosted Auth/Firestore, actual emulator, composite-index readiness, rules deployment or IAM certification. |
 | GitHub | Actual REST algorithm against stateful mocked fetch; **live read-only** repository/default/ref/permissions/fetch for this checkout. | Live application branch/Contents/PR/merge/required-CI mutation journey. The delivery PR is tracked separately. |
-| Vercel | Actual gate/state/recovery services and mocked API responses, including failure/timeout/concurrency. | Live creation, project integration, build/runtime/assets, actual merge-triggered deployment or READY. |
+| Vercel | Actual gate/state/recovery services and mocked API responses, including failure/timeout/concurrency. | Application-triggered live creation/READY, runtime/assets, actual merge-triggered production deployment. Automatic non-production Git-integration Preview is separately recorded above. |
 | Socket.IO | Real local server/client network, authentication, rooms, events, presence and expiry; component transports mocked. | Public browser proxy/CORS/TLS, production reconnects or Redis between separate processes. |
 | Gemini / compiler | Actual installed Gemini SDK and HTTP route/multipart handling with mocked provider HTTP; compiler validation and timeout/failure handling. | Live model/compiler access, accuracy or provider privacy/retention behavior. |
 | Native Git / PDF | Real native Git in isolated temporary projects and actual PDF extraction workers, including page/concurrency limits. | Production filesystem/container isolation, Vercel worker bundling, multi-instance cache locking or hostile-native-memory containment. |

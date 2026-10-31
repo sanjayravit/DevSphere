@@ -123,5 +123,44 @@
     "Measured after OAuth browser-nonce, Vercel project binding and monitoring-unmount fixes.",
     "Local application source tests; check the PR for Actions on exact HEAD.",
     "No actual merge/production deployment or hosted rules/index/IAM change authorized or performed."
-  ]
+  ],
+  "functionalSourceCommit": "2a4cc3d2e664aef48513ba65c99a8b3c752ec8bc",
+  "remoteEvidence": {
+    "sourceCommit": "2a4cc3d2e664aef48513ba65c99a8b3c752ec8bc",
+    "pullRequest": {
+      "number": 2,
+      "url": "https://github.com/sanjayravit/DevSphere/pull/2",
+      "base": "main",
+      "state": "OPEN"
+    },
+    "actions": [
+      {
+        "event": "push",
+        "runId": 41233237266,
+        "conclusion": "success",
+        "url": "https://github.com/sanjayravit/DevSphere/actions/runs/41233237266"
+      },
+      {
+        "event": "pull_request",
+        "runId": 41233279017,
+        "conclusion": "success",
+        "url": "https://github.com/sanjayravit/DevSphere/actions/runs/41233279017"
+      }
+    ],
+    "gitGuardianCheck": "PASS_AS_REPORTED_BY_GITHUB",
+    "vercel": {
+      "source": "EXISTING_AUTOMATIC_GIT_INTEGRATION",
+      "githubDeploymentId": 7463175576,
+      "environment": "Preview",
+      "productionEnvironment": false,
+      "providerReportedStatus": "success",
+      "endpointSmokeTest": "NOT_PERFORMED_OUTBOUND_HOST_RESTRICTED",
+      "applicationPostMergeDeploymentJourney": "BLOCKED"
+    },
+    "actionsWarnings": [
+      "v4 checkout/setup actions target Node 20; GitHub forces action runtime to Node 24.",
+      "ubuntu-latest is migrating to Ubuntu 26."
+    ],
+    "note": "Follow-up only records evidence; recheck latest exact HEAD on PR. No functional source changes or production deployment."
+  }
 }
