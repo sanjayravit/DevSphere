@@ -1,11 +1,10 @@
-const express = require("express");
+import express from "express";
 const router = express.Router();
-const auth = require("../middleware/auth");
-const gitService = require("../services/gitService");
-const Project = require("../models/Project");
-const User = require("../models/user");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
+import auth from "../middleware/auth.js";
+import gitService from "../services/gitService.js";
+import Project from "../models/Project.js";
+import User from "../models/user.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key");
 
 // GET /api/git/:projectId/history
@@ -65,5 +64,4 @@ router.post("/:projectId/commit", auth, async (req, res) => {
     }
 });
 
-module.exports = router;
-
+export default router;

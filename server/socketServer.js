@@ -1,12 +1,12 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const { createAdapter } = require("@socket.io/redis-adapter");
-const Redis = require("ioredis");
-const cors = require("cors");
-const socketHandler = require("./sockets/socketHandler");
-require("dotenv").config();
-
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
+import Redis from "ioredis";
+import cors from "cors";
+import socketHandler from "./sockets/socketHandler.js";
+import { authenticateSocket } from './routes/v2.js';
+import "dotenv/config";
 const app = express();
 app.use(cors());
 
@@ -27,12 +27,16 @@ if (process.env.REDIS_URL) {
     console.log("[Socket Server] Redis Adapter integrated for scaling");
 }
 
+// Legacy collaboration remains available without a token; V2 clients supply the existing JWT.
+io.use((socket, next) => socket.handshake.auth?.token ? authenticateSocket(socket, next) : next());
 socketHandler.init(io);
 
 io.on("connection", (socket) => {
+    if (socket.data.userId) socket.join(`devsphere:user:${socket.data.userId}`);
     console.log("User connected:", socket.id);
 
     socket.on("join-room", ({ roomId, user }) => {
+        if (typeof roomId !== 'string' || roomId.startsWith('devsphere:user:')) return;
         socket.join(roomId);
         socket.to(roomId).emit("user-joined", { socketId: socket.id, user });
         console.log(`User ${user?.name || socket.id} joined room ${roomId}`);

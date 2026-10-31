@@ -227,6 +227,7 @@ export const Sidebar = ({ mobileOpen, setMobileOpen, isPinned, setIsPinned }) =>
                 <nav className="space-y-1 mb-8 shrink-0">
                     <NavItem to="/dashboard" icon={LayoutDashboard} label="Dashboard" onClick={closeMobile} />
                     <NavItem to="/self-healing" icon={Activity} label="Self-Healing" onClick={closeMobile} />
+                    <NavItem to="/v2" icon={BrainCircuit} label="DevSphere V2" onClick={closeMobile} />
                     <NavItem to="/marketplace" icon={PackageOpen} label="Marketplace" onClick={closeMobile} />
                     <NavItem to="/feed" icon={MessageSquare} label="Social Feed" onClick={closeMobile} />
                     <NavItem to="/ai-tools" icon={BrainCircuit} label="AI Tools" onClick={closeMobile} />

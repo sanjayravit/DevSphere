@@ -1,11 +1,10 @@
 import axios from 'axios';
 
 const getBaseURL = () => {
-    // Force Vercel to use the relative /api path which points to the same domain's serverless functions
-    if (import.meta.env.PROD || window.location.hostname.includes('vercel.app')) {
-        return "/api";
-    }
-    return import.meta.env.VITE_API_URL || "http://localhost:5050/api";
+    // A public API origin may point at the persistent backend; otherwise use Vercel's same-origin adapter.
+    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL.replace(/\/$/, '');
+    // Same-origin browser requests are proxied by Vite locally and by the deployment adapter in production.
+    return "/api";
 };
 
 const api = axios.create({

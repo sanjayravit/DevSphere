@@ -1,8 +1,24 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
-import App from './App';
+import api from './services/api';
+import { V2WorkspacePage } from './pages/V2WorkspacePage';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+vi.mock('./services/api', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+
+describe('DevSphere V2 workspace', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    api.get.mockResolvedValue({ data: { runs: [] } });
+  });
+
+  it('renders the integrated V2 workspace and execution mode selector', async () => {
+    render(<V2WorkspacePage />);
+    expect(screen.getByRole('heading', { name: /devsphere v2/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/what should devsphere investigate/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/execution mode/i)).toHaveValue('assisted');
+    expect(await screen.findByText(/saved runs will appear here/i)).toBeInTheDocument();
+  });
 });

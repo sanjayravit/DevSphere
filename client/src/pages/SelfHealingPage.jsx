@@ -18,8 +18,7 @@ const timeAgo = (date) => {
     return `${Math.floor(hours / 24)}d ago`;
 };
 
-const SOCKET_URL = import.meta?.env?.VITE_SOCKET_URL || 'http://localhost:5000';
-const API_URL = import.meta?.env?.VITE_API_URL || 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 
 const StatusBadge = ({ monitoring }) => (
     <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border text-sm font-medium transition-all duration-500 ${monitoring
@@ -87,7 +86,7 @@ export const SelfHealingPage = () => {
         setLoading(true);
         await fetchHistory();
 
-        socketRef.current = io(SOCKET_URL);
+        socketRef.current = io(SOCKET_URL, { auth: { token: localStorage.getItem('token') } });
 
         socketRef.current.on('error_detected', (data) => {
             setEvents(prev => [{ ...data, type: 'ERROR_DETECTED', id: `${Date.now()}`, timestamp: new Date().toISOString() }, ...prev]);

@@ -1,8 +1,7 @@
-const { admin, db } = require("../firebaseAdmin");
-
+import { admin, db } from "../firebaseAdmin.js";
 const getCol = () => db ? db.collection("marketplace_items") : null;
 
-module.exports = {
+const model = {
     findAll: async () => {
         const col = getCol();
         if (!col) return [];
@@ -45,3 +44,5 @@ module.exports = {
         return { id, ...data };
     }
 };
+
+export default model;

@@ -1,6 +1,6 @@
-const router = require("express").Router();
-const User = require("../models/user");
-
+import express from "express";
+const router = express.Router();
+import User from "../models/user.js";
 router.get("/:id", async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ msg: "User not found" });
@@ -8,4 +8,4 @@ router.get("/:id", async (req, res) => {
   res.json(user);
 });
 
-module.exports = router;
+export default router;

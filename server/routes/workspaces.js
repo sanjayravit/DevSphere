@@ -1,9 +1,8 @@
-const express = require("express");
+import express from "express";
 const router = express.Router();
-const auth = require("../middleware/auth");
-const Workspace = require("../models/Workspace");
-const User = require("../models/user");
-
+import auth from "../middleware/auth.js";
+import Workspace from "../models/Workspace.js";
+import User from "../models/user.js";
 // Create Workspace
 router.post("/", auth, async (req, res) => {
     try {
@@ -48,5 +47,4 @@ router.get("/", auth, async (req, res) => {
     }
 });
 
-module.exports = router;
-
+export default router;

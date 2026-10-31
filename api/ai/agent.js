@@ -1,106 +1,48 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const jwt = require("jsonwebtoken");
-const { db } = require("../../server/firebaseAdmin");
-const Project = require("../../server/models/Project");
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import jwt from 'jsonwebtoken';
+import { db } from '../../server/firebaseAdmin.js';
+import Project from '../../server/models/Project.js';
+import Workspace from '../../server/models/Workspace.js';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key_to_prevent_crash");
-
-module.exports = async (req, res) => {
-    // Handle OPTIONS for CORS
-    if (req.method === "OPTIONS") { return res.status(200).end(); }
-    if (req.method !== "POST") { return res.status(405).json({ error: "Method not allowed" }); }
-
-    const authHeader = req.headers.authorization || req.headers.Authorization;
-    const token = authHeader && authHeader.split(" ")[1];
-    if (!token) return res.status(401).json({ msg: "No token, authorization denied" });
-
-    let user;
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || "fallback_dev_secret");
-        user = decoded.user || decoded;
-        if (!user || !user.id) throw new Error("Invalid token payload");
-    } catch (err) {
-        return res.status(401).json({ msg: "Token is not valid" });
+export default async function aiAgent(req, res) {
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token || !process.env.JWT_SECRET) return res.status(401).json({ error: 'Authentication required.' });
+  let user;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    user = decoded.user || decoded;
+    if (!user?.id) throw new Error('Invalid token payload');
+  } catch { return res.status(401).json({ error: 'Token is not valid.' }); }
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY is not configured.' });
+  const { action, code = '', projectId, message = '' } = req.body || {};
+  if (typeof code !== 'string' || code.length > 100_000) return res.status(400).json({ error: 'Invalid code input.' });
+  try {
+    let history = [];
+    if (projectId) {
+      const project = await Project.findById(projectId);
+      if (!project) return res.status(404).json({ error: 'Project not found.' });
+      const workspace = await Workspace.findById(project.workspaceId);
+      if (!workspace || !workspace.members?.includes(String(user.id))) return res.status(403).json({ error: 'You are not authorized to access this project.' });
+      if (db) {
+        const snapshot = await db.collection('aiChats').where('projectId', '==', projectId).orderBy('timestamp', 'asc').limit(50).get();
+        history = snapshot.docs.map(doc => { const item = doc.data(); return { role: item.role === 'user' ? 'user' : 'model', parts: [{ text: item.content }] }; });
+      }
     }
-
-    const { action, code, projectId, message } = req.body;
-
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes("dummy") || process.env.GEMINI_API_KEY.includes("your_actual")) {
-        return res.status(500).json({ error: "Configuration Error: GEMINI_API_KEY is missing." });
+    const model = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
+    const instruction = action === 'chat' ? `Answer the user's coding question: ${message}` : action === 'explain' ? 'Explain this code clearly.' : action === 'optimize' ? 'Optimize the code and return only the replacement code.' : action === 'fix' || action === 'bugs' ? 'Identify and fix issues. Return only the replacement code.' : 'Analyze this code.';
+    const prompt = `${instruction}\n\n${code}`;
+    const result = action === 'chat' ? await model.startChat({ history }).sendMessage(prompt) : await model.generateContent(prompt);
+    const responseText = result.response.text();
+    if (projectId && db) {
+      const timestamp = new Date();
+      await db.collection('aiChats').add({ projectId, role: 'user', content: prompt, timestamp });
+      await db.collection('aiChats').add({ projectId, role: 'model', content: responseText, timestamp: new Date(timestamp.getTime() + 1) });
     }
-
-    try {
-        let history = [];
-        let project = null;
-
-        if (projectId) {
-            project = await Project.findById(projectId);
-            if (!project) return res.status(404).json({ error: "Project not found" });
-
-            // Ensure database is connected
-            if (db) {
-                const aiChatsSnapshot = await db.collection("aiChats").where("projectId", "==", projectId).orderBy("timestamp", "asc").limit(50).get();
-                aiChatsSnapshot.forEach(doc => {
-                    const msg = doc.data();
-                    history.push({
-                        role: msg.role === 'user' ? 'user' : 'model',
-                        parts: [{ text: msg.content }]
-                    });
-                });
-            }
-        }
-
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-        let instruction = "Analyze this code.";
-        if (action === "explain") {
-            instruction = "Explain this code clearly for a developer. Keep it clean and avoid markdown blocks wrapping the entire response if possible.";
-        } else if (action === "fix" || action === "bugs") {
-            instruction = "Find bugs and issues in this code and fix them. Return ONLY the fixed code without markdown blocks like ```javascript.";
-        } else if (action === "optimize") {
-            instruction = "Optimize this code to improve performance and readability. Return ONLY the improved code without markdown blocks.";
-        } else if (action === "chat") {
-            instruction = `The user is asking a direct question regarding the code context. Question: ${message}`;
-        }
-
-        const finalPrompt = `${instruction} \n\nCode State: \n${code} `;
-
-        let responseText = "";
-
-        if (action === "chat") {
-            const chat = model.startChat({ history });
-            const result = await chat.sendMessage([{ text: finalPrompt }]);
-            responseText = result.response.text();
-        } else {
-            const result = await model.generateContent(finalPrompt);
-            responseText = result.response.text();
-
-            // Clean up backticks if AI ignores prompt instructions
-            if (action === "fix" || action === "optimize") {
-                responseText = responseText.replace(/^\`\`\`.*\n/, '').replace(/\n\`\`\`$/, '').trim();
-            }
-        }
-
-        // Save interaction to Firestore aiChats collection
-        if (projectId && db) {
-            const now = new Date();
-            await db.collection("aiChats").add({
-                projectId,
-                role: 'user',
-                content: finalPrompt,
-                timestamp: now
-            });
-            await db.collection("aiChats").add({
-                projectId,
-                role: 'model',
-                content: responseText,
-                timestamp: new Date(now.getTime() + 1000) // slight offset
-            });
-        }
-
-        res.json({ result: responseText });
-    } catch (error) {
-        console.error("Agent AI Error:", error);
-        res.status(500).json({ error: "Failed to generate AI response. Check your API key or logs." });
-    }
-};
+    return res.json({ result: responseText });
+  } catch (error) {
+    console.error('AI endpoint failed:', error.message);
+    return res.status(502).json({ error: 'AI request failed.' });
+  }
+}

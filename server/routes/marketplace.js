@@ -1,9 +1,8 @@
-const express = require("express");
+import express from "express";
 const router = express.Router();
-const auth = require("../middleware/auth");
-const MarketplaceItem = require("../models/MarketplaceItem");
-const Project = require("../models/Project");
-
+import auth from "../middleware/auth.js";
+import MarketplaceItem from "../models/MarketplaceItem.js";
+import Project from "../models/Project.js";
 // GET /api/marketplace
 router.get("/", async (req, res) => {
     try {
@@ -88,5 +87,4 @@ router.post("/:id/install", auth, async (req, res) => {
     }
 });
 
-module.exports = router;
-
+export default router;

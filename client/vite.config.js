@@ -16,6 +16,8 @@ export default defineConfig({
         },
     },
     server: {
+        host: '0.0.0.0',
+        allowedHosts: true,
         port: 3000,
         open: true,
         proxy: {
@@ -25,7 +27,7 @@ export default defineConfig({
                 secure: false,
             },
             '/socket.io': {
-                target: 'http://localhost:5000',
+                target: 'http://localhost:5050',
                 ws: true,
             },
         },

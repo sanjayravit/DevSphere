@@ -33,4 +33,5 @@ function detectErrors(commitData, mockLogStr) {
     return { error, file, line, codeSnippet: codeStr };
 }
 
-module.exports = { detectErrors };
+export { detectErrors };
+export default { detectErrors };
