@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
+import { createInlineCompletions } from '../utils/inlineCompletions';
+import { captureSelection, applyReplacement } from '../utils/editorChanges';
 import socket from '../services/socket';
 import api from '../services/api';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Play, Sparkles, Bug, Zap, MessageSquare, Users, Send, Save, FileCode, GitCommit, GitBranch, Code2, Trash2, Loader2, Plus, X, Minimize2, Maximize2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useWorkspace } from '../context/WorkspaceContext';
 import { useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -139,7 +142,17 @@ export const CodeEditorPage = () => {
     const [isCommitting, setIsCommitting] = useState(false);
 
     // Collaboration & UI state
-    const { user } = useAuth();
+    const { user, token } = useAuth();
+    const workspaceContext = useWorkspace();
+    const [editorError, setEditorError] = useState('');
+    const latestActiveFile = useLatest(activeFileIndex);
+    const latestFiles = useLatest(files);
+    const scope = useRef(null);
+    const scopeKey = JSON.stringify([user?.id || '', projectId || '']);
+    if (scope.current?.key !== scopeKey) scope.current = { key: scopeKey, projectId };
+    const mounted = useRef(true);
+    const isCurrent = snapshot => mounted.current && scope.current === snapshot;
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     const [messages, setMessages] = useState([]);
     const [roomUsers, setRoomUsers] = useState([]);
     const [isTerminalVisible, setIsTerminalVisible] = useState(false);
@@ -157,7 +170,8 @@ export const CodeEditorPage = () => {
     const editorRef = useRef(null);
     const monacoRef = useRef(null);
     const latestUser = useLatest(user);
-    const completionsDisposableRef = useRef(null); // Track inline completions registration to avoid stale closures
+    const [editorReady, setEditorReady] = useState(false);
+    const cursorSubscription = useRef(null);
     const emitCodeChange = useRef(null);
 
     // Initial setup of debounce function
@@ -169,53 +183,68 @@ export const CodeEditorPage = () => {
                 if (socket) socket.emit('code-change', { roomId, code: { code: value, fileIndex: index } });
             }, 300);
         };
-    }, []);
+        return () => clearTimeout(timeout);
+    }, [projectId, user?.id]);
 
     // Initial project schema fetching
     useEffect(() => {
-        if (!projectId) return;
-        api.get(`/projects/${projectId}`).then(res => {
+        const snapshot = scope.current;
+        const controller = new AbortController();
+        setProject(null); setFiles([]); setCode(''); setAiHistory([]); setActiveFileIndex(0); setEditorError('');
+        setGitHistory([]); setMessages([]); setRoomUsers([]); setTypingUsers({}); setOutput('');
+        setIsAiLoading(false); setIsSaving(false); setIsCommitting(false); setIsRunning(false);
+        clearTimeout(typingTimeoutRef.current); cursorsRef.current = {};
+        if (!projectId || !user?.id || !token) return () => controller.abort();
+        api.get(`/projects/${projectId}`, { signal: controller.signal }).then(res => {
+            if (controller.signal.aborted || !isCurrent(snapshot)) return;
             setProject(res.data);
+            workspaceContext?.setActiveProject(res.data);
             if (res.data.chatHistory) {
                 setAiHistory(res.data.chatHistory);
             }
             if (res.data.files && res.data.files.length > 0) {
                 setFiles(res.data.files);
                 setCode(res.data.files[0].content);
-                setLanguage(res.data.files[0].language);
+                setLanguage(res.data.files[0].language || detectLanguage(res.data.files[0].name));
             }
             fetchGitHistory();
-        }).catch(err => console.error("Initialize Error:", err));
-    }, [projectId]);
+        }).catch(err => { if (!controller.signal.aborted && isCurrent(snapshot)) setEditorError(err.response?.data?.error || 'Could not load this project.'); });
+        return () => controller.abort();
+    }, [projectId, user?.id, Boolean(token)]);
 
     const fetchGitHistory = async () => {
+        const snapshot = scope.current;
         try {
             const res = await api.get(`/git/${projectId}/history`);
-            setGitHistory(res.data || []);
+            if (isCurrent(snapshot)) setGitHistory(res.data || []);
         } catch (err) {
-            console.error("Failed to fetch git history");
+            if (isCurrent(snapshot)) setEditorError('Git history is unavailable.');
         }
     };
 
     useEffect(() => {
-        if (!projectId) return;
-
-        socket.emit("join-room", { roomId: projectId, user: latestUser.current || { name: 'Anonymous' } });
+        if (!projectId || project?.id !== projectId || !token) return;
+        const join = () => socket.emit('join-room', { roomId: projectId });
+        socket.on('connect', join);
+        socket.on('collaboration:error', () => setEditorError('Collaboration access was denied or the update was invalid.'));
+        if (socket.connected) join(); else socket.connect();
 
         socket.on('code-update', (incomingPayload) => {
             // Unpack generic updates versus explicitly indexed file broadcasts
             const isLegacy = typeof incomingPayload === 'string';
             const newCode = isLegacy ? incomingPayload : incomingPayload.code;
-            const fileIndex = isLegacy ? activeFileIndex : incomingPayload.fileIndex;
+            const fileIndex = isLegacy ? latestActiveFile.current : incomingPayload.fileIndex;
+            if (!Number.isInteger(fileIndex) || typeof newCode !== 'string') return;
 
             // Only update local view if we are on the exact same active tab as the incoming file signal
-            if (activeFileIndex === fileIndex || isLegacy) {
+            if (latestActiveFile.current === fileIndex || isLegacy) {
                 setCode(newCode);
             }
 
             setFiles(prev => {
                 const updated = [...prev];
-                if (updated[fileIndex]) updated[fileIndex].content = newCode;
+                if (updated[fileIndex]) updated[fileIndex] = { ...updated[fileIndex], content: newCode };
+                else if (fileIndex === updated.length && typeof incomingPayload.fileName === 'string') updated.push({ name: incomingPayload.fileName, content: newCode, language: incomingPayload.language || detectLanguage(incomingPayload.fileName) });
                 return updated;
             });
         });
@@ -255,6 +284,9 @@ export const CodeEditorPage = () => {
         });
 
         return () => {
+            socket.emit('leave-room', { roomId: projectId });
+            socket.off('connect', join);
+            socket.off('collaboration:error');
             socket.off('code-update');
             socket.off('chat-update');
             socket.off('user-joined');
@@ -269,7 +301,7 @@ export const CodeEditorPage = () => {
             if (styleTag) styleTag.remove();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [projectId, latestUser]);
+    }, [projectId, project?.id, token, latestUser, latestActiveFile]);
 
     // Auto-scroll output terminal
     useEffect(() => {
@@ -318,7 +350,8 @@ export const CodeEditorPage = () => {
             const cursorUser = cursorsRef.current[id].user;
             const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
             const color = colors[id.charCodeAt(0) % colors.length];
-            const name = cursorUser?.name?.split(' ')[0] || 'User';
+            const name = (cursorUser?.name?.split(' ')[0] || 'User').replace(/[^a-zA-Z0-9 _-]/g, '').slice(0, 40);
+            if (!/^[a-zA-Z0-9_-]+$/.test(id)) return;
 
             css += `
                 .remote-cursor-${id} { 
@@ -344,7 +377,7 @@ export const CodeEditorPage = () => {
                 }
             `;
         });
-        styleTag.innerHTML = css;
+        styleTag.textContent = css;
     };
 
     const updateCursor = (socketId, lineNumber, column, cursorUser) => {
@@ -364,13 +397,15 @@ export const CodeEditorPage = () => {
     useEffect(() => {
         if (!code || !projectId || !editorRef.current || !monacoRef.current) return;
 
+        const snapshot = scope.current; const model = editorRef.current.getModel(); const controller = new AbortController();
         const lintTimer = setTimeout(async () => {
             try {
                 const res = await api.post('/ai/copilot', {
                     action: 'lint',
                     code,
                     projectId
-                });
+                }, { signal: controller.signal });
+                if (!isCurrent(snapshot) || controller.signal.aborted || editorRef.current?.getModel() !== model) return;
 
                 let rawRes = res.data.result.trim();
                 rawRes = rawRes.replace(/^\`\`\`(json)?/i, '').replace(/\`\`\`$/i, '').trim();
@@ -381,7 +416,7 @@ export const CodeEditorPage = () => {
                 } catch (e) { } // Ignore if AI spits out conversational garbage natively
 
                 if (Array.isArray(issues) && monacoRef.current) {
-                    const markers = issues.map(issue => ({
+                    const markers = issues.filter(issue => Number.isInteger(issue.line) && issue.line > 0 && issue.line <= model.getLineCount() && typeof issue.message === 'string').slice(0, 100).map(issue => ({
                         severity: monacoRef.current.MarkerSeverity.Warning,
                         message: `🤖 AI Debugger: ${issue.message}`,
                         startLineNumber: issue.line,
@@ -392,12 +427,12 @@ export const CodeEditorPage = () => {
                     monacoRef.current.editor.setModelMarkers(editorRef.current.getModel(), 'ai-linter', markers);
                 }
             } catch (err) {
-                console.error("Live Linting Error", err);
+                // Diagnostics are advisory; failed or obsolete responses never become compiler results.
             }
         }, 2000); // 2-second debounce for snappy diagnostic mapping
 
-        return () => clearTimeout(lintTimer);
-    }, [code, projectId]);
+        return () => { clearTimeout(lintTimer); controller.abort(); };
+    }, [code, projectId, activeFileIndex, user?.id]);
 
     const handleEditorChange = (value) => {
         setCode(value);
@@ -407,20 +442,25 @@ export const CodeEditorPage = () => {
 
         setFiles(prev => {
             const next = [...prev];
-            if (next[activeFileIndex]) next[activeFileIndex].content = value;
+            if (next[activeFileIndex]) next[activeFileIndex] = { ...next[activeFileIndex], content: value || "" };
             return next;
         });
     };
 
     const handleSave = async () => {
-        if (!projectId) return;
+        if (!projectId || project?.id !== projectId || isSaving) return false;
+        const snapshot = scope.current;
         setIsSaving(true);
         try {
-            await api.put(`/projects/${projectId}/files`, { files });
+            const response = await api.put(`/projects/${projectId}/files`, { files, version: project?.version || 0 });
+            if (!isCurrent(snapshot)) return false;
+            setProject(response.data); setEditorError('');
+            return true;
         } catch (err) {
-            console.error("Save Error:", err);
+            if (isCurrent(snapshot)) setEditorError(err.response?.data?.error || 'Save failed. Your local edits have not been persisted.');
+            return false;
         } finally {
-            setIsSaving(false);
+            if (isCurrent(snapshot)) setIsSaving(false);
         }
     };
 
@@ -428,10 +468,7 @@ export const CodeEditorPage = () => {
         setActiveFileIndex(index);
         setCode(files[index].content);
         setLanguage(files[index].language);
-        // Notify collaborators which file you switched to
-        if (socket) {
-            socket.emit('code-change', { roomId: projectId, code: { code: files[index].content, fileIndex: index } });
-        }
+        // Switching a tab is not an edit; never overwrite a collaborator's file.
     };
 
     const handleOpenNewFileModal = () => {
@@ -447,7 +484,7 @@ export const CodeEditorPage = () => {
             setNewFileNameError('Please enter a file name.');
             return;
         }
-        if (!trimmed.includes('.')) {
+        if (!trimmed.includes('.') || /(^|\/)(\.\.?|\.git)(\/|$)/i.test(trimmed) || /[\\:\x00-\x1f]/.test(trimmed) || trimmed.startsWith('/')) {
             setNewFileNameError('Include an extension (e.g. app.py, index.html).');
             return;
         }
@@ -468,7 +505,7 @@ export const CodeEditorPage = () => {
         setIsNewFileModalOpen(false);
         setNewFileName('');
         if (socket) {
-            socket.emit('code-change', { roomId: projectId, code: { code: content, fileIndex: newIndex } });
+            socket.emit('code-change', { roomId: projectId, code: { code: content, fileIndex: newIndex, fileName: trimmed, language: detectedLang } });
         }
     };
 
@@ -476,54 +513,12 @@ export const CodeEditorPage = () => {
         editorRef.current = editor;
         monacoRef.current = monaco;
 
-        // Dispose stale provider before re-registering to avoid duplicate ghost completions
-        if (completionsDisposableRef.current) {
-            completionsDisposableRef.current.dispose();
-        }
-
-        // Register Inline Completions Provider for Ghost Text
-        completionsDisposableRef.current = monaco.languages.registerInlineCompletionsProvider(language, {
-            provideInlineCompletions: async (model, position) => {
-                // Get code up to current cursor position to give context to AI
-                const textUntilPosition = model.getValueInRange({
-                    startLineNumber: 1,
-                    startColumn: 1,
-                    endLineNumber: position.lineNumber,
-                    endColumn: position.column
-                });
-
-                // Debounce simple return to prevent spamming API on every keystroke
-                // In production, you'd use a real debounce ref, but for this demo, 
-                // we'll fetch explicitly when the provider is invoked by Monaco (which adds a slight delay natively).
-
-                try {
-                    const res = await api.post('/ai/copilot', {
-                        action: 'continue',
-                        code: textUntilPosition,
-                        projectId
-                    });
-
-                    if (res.data && res.data.result) {
-                        return {
-                            items: [{
-                                insertText: res.data.result.replace(/^\`\`\`.*\n/, '').replace(/\n\`\`\`$/, ''), // Strip markdown if it leaked
-                                range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
-                            }]
-                        };
-                    }
-                } catch (err) {
-                    console.error("Ghost Complete Error:", err);
-                }
-
-                return { items: [] };
-            },
-            freeInlineCompletions: () => { }
-        });
-
-        editor.onDidChangeCursorPosition((e) => {
+        setEditorReady(true);
+        cursorSubscription.current?.dispose();
+        cursorSubscription.current = editor.onDidChangeCursorPosition((e) => {
             if (socket) {
                 socket.emit('cursor-change', {
-                    roomId: projectId,
+                    roomId: scope.current.projectId,
                     cursorData: {
                         line: e.position.lineNumber,
                         column: e.position.column,
@@ -533,6 +528,17 @@ export const CodeEditorPage = () => {
             }
         });
     };
+
+    useEffect(() => {
+        if (!editorReady || project?.id !== projectId || !token) return undefined;
+        const provider = createInlineCompletions({
+            request: (body, options) => api.post('/ai/copilot', body, options), monaco: monacoRef.current,
+            getSnapshot: () => scope.current, isCurrent, getModel: () => editorRef.current?.getModel()
+        });
+        const registration = monacoRef.current.languages.registerInlineCompletionsProvider(language, provider);
+        return () => { provider.dispose(); registration.dispose(); };
+    }, [language, editorReady, projectId, project?.id, user?.id, token]);
+    useEffect(() => () => { cursorSubscription.current?.dispose(); clearTimeout(typingTimeoutRef.current); }, []);
 
     const handleSendMessage = (e) => {
         e.preventDefault();
@@ -565,15 +571,18 @@ export const CodeEditorPage = () => {
     };
 
     const executeCode = async () => {
+        if (isRunning) return;
+        const snapshot = scope.current;
         setIsRunning(true);
         setIsTerminalVisible(true);
         try {
             const res = await api.post('/code/run', {
                 code,
-                language_id: LANGUAGES[language].id
+                language_id: LANGUAGES[language]?.id ?? 0
             });
 
-            // Judge0 returns token, we normally might have to poll.
+            if (!isCurrent(snapshot)) return;
+            // The backend returns the actual remote execution result.
             // If the backend handles polling, it returns the output directly.
             if (res.data && res.data.stdout) {
                 setOutput(res.data.stdout);
@@ -585,15 +594,16 @@ export const CodeEditorPage = () => {
                 setOutput(JSON.stringify(res.data, null, 2));
             }
         } catch (err) {
-            setOutput(`Error executing code:\n${err.message}`);
+            if (isCurrent(snapshot)) setOutput(`Error executing code:\n${err.response?.data?.error || err.message}`);
         } finally {
-            setIsRunning(false);
+            if (isCurrent(snapshot)) setIsRunning(false);
         }
     };
 
     const handleAiChat = async (e) => {
         e.preventDefault();
-        if (!aiChatInput.trim()) return;
+        if (!aiChatInput.trim() || isAiLoading) return;
+        const snapshot = scope.current;
 
         const userMsg = aiChatInput;
         setAiChatInput('');
@@ -619,24 +629,30 @@ export const CodeEditorPage = () => {
                 projectId
             });
 
+            if (!isCurrent(snapshot)) return;
             const modelMessage = { role: 'model', content: res.data.result };
             setAiHistory(prev => [...prev, modelMessage]);
             if (socket) {
                 socket.emit('ai-response', { roomId: projectId, message: modelMessage });
             }
         } catch (err) {
-            const errorMessage = { role: 'model', content: `Error: ${err.message}` };
+            if (!isCurrent(snapshot)) return;
+            const errorMessage = { role: 'model', content: `Error: ${err.response?.data?.error || err.message}` };
             setAiHistory(prev => [...prev, errorMessage]);
             if (socket) {
                 socket.emit('ai-response', { roomId: projectId, message: errorMessage });
             }
         } finally {
-            setIsAiLoading(false);
+            if (isCurrent(snapshot)) setIsAiLoading(false);
         }
     };
 
     const handleAiAction = async (action) => {
-        setIsAiLoading(true);
+        if (isAiLoading || project?.id !== projectId || !files[activeFileIndex]) return;
+        const snapshot = scope.current;
+        const sourceFile = { ...files[activeFileIndex] }; const sourceIndex = activeFileIndex;
+        const selection = captureSelection(editorRef.current, sourceFile.content);
+        setEditorError(''); setIsAiLoading(true);
         const actionStartMsg = { role: 'user', content: `Run AI Action: ${action}` };
         setAiHistory(prev => [...prev, actionStartMsg]);
         if (socket) {
@@ -644,26 +660,27 @@ export const CodeEditorPage = () => {
         }
 
         try {
-            const selectedCode = editorRef.current?.getModel().getValueInRange(editorRef.current?.getSelection());
-            const codeToSend = selectedCode || code;
-
             const res = await api.post('/ai/agent', {
                 action: action,
-                code: codeToSend,
+                code: selection?.text || sourceFile.content,
                 projectId,
                 targetLanguage: action === 'convert' ? targetLanguage : undefined
             });
 
+            if (!isCurrent(snapshot)) return;
             let modelResponse = "";
             if (action === "optimize" || action === "optimise" || action === "refactor" || action === "convert") {
-                if (res.data.result) {
-                    setCode(res.data.result);
-                    if (socket) {
-                        socket.emit('code-change', { roomId: projectId, code: { code: res.data.result, fileIndex: activeFileIndex } });
-                    }
-                    modelResponse = `Code ${action}ed and applied to the editor successfully.`;
+                const current = latestFiles.current[sourceIndex];
+                if (!current || current.name !== sourceFile.name || current.content !== sourceFile.content || current.language !== sourceFile.language) {
+                    setEditorError('The file changed while AI was working. Its response was not applied; review it below or retry.');
+                    modelResponse = `Not applied: the file changed while AI was working.\n${res.data.result || ''}`;
                 } else {
-                    modelResponse = "AI returned an empty result for this action.";
+                    const replacement = applyReplacement(sourceFile.content, res.data.result, selection);
+                    const nextLanguage = action === 'convert' && !selection ? targetLanguage : sourceFile.language;
+                    setFiles(previous => previous.map((file, index) => index === sourceIndex ? { ...file, content: replacement, language: nextLanguage } : file));
+                    if (latestActiveFile.current === sourceIndex) { setCode(replacement); setLanguage(nextLanguage); }
+                    socket.emit('code-change', { roomId: projectId, code: { code: replacement, fileIndex: sourceIndex } });
+                    modelResponse = `AI replacement applied to ${sourceFile.name}${selection ? ' (selected text only)' : ''}. Save to persist; this is not an executed test or code review.`;
                 }
             } else {
                 modelResponse = res.data.result;
@@ -675,25 +692,28 @@ export const CodeEditorPage = () => {
                 socket.emit('ai-response', { roomId: projectId, message: actionResultMsg });
             }
         } catch (err) {
-            console.error("AI Error:", err);
+            if (!isCurrent(snapshot)) return;
             const errorMsg = { role: 'model', content: `Error: ${err.response?.data?.error || err.message}` };
             setAiHistory(prev => [...prev, errorMsg]);
             if (socket) {
                 socket.emit('ai-response', { roomId: projectId, message: errorMsg });
             }
         } finally {
-            setIsAiLoading(false);
+            if (isCurrent(snapshot)) setIsAiLoading(false);
         }
     };
 
     const handleGitCommit = async (e) => {
         e.preventDefault();
+        if (isCommitting || !commitMessage.trim()) return;
+        const snapshot = scope.current;
         setIsCommitting(true);
         try {
             // Auto-save before commit to ensure DB matches editor State
-            await handleSave();
+            if (!await handleSave() || !isCurrent(snapshot)) return;
             const res = await api.post(`/git/${projectId}/commit`, { message: commitMessage });
 
+            if (!isCurrent(snapshot)) return;
             if (res.data.success) {
                 setCommitMessage('');
                 fetchGitHistory();
@@ -703,67 +723,26 @@ export const CodeEditorPage = () => {
                 }
             }
         } catch (err) {
-            console.error("Commit Error", err);
+            if (isCurrent(snapshot)) setEditorError(err.response?.data?.error || 'Commit failed; no successful commit was reported.');
         } finally {
-            setIsCommitting(false);
+            if (isCurrent(snapshot)) setIsCommitting(false);
         }
     };
 
-    // Maps a language key to its single-line comment prefix
-    const COMMENT_PREFIXES = {
-        javascript: '//',
-        python: '#',
-        java: '//',
-        c: '//',
-        cpp: '//',
-    };
-
-    const handleLanguageChange = (e) => {
-        const newLang = e.target.value;
-        setLanguage(newLang);
-
-        // Check if code is still a default/welcome template (no real user content)
-        const isDefaultCode = Object.values(DEFAULT_TEMPLATES).some(t => code.trim() === t.trim())
-            || code.includes('Welcome to DevSphere')
-            || code.includes('// Loading workspace')
-            || code.includes('# Loading workspace');
-
-        if (isDefaultCode) {
-            // Replace the whole template when in default state
-            const newTemplate = DEFAULT_TEMPLATES[newLang] || DEFAULT_TEMPLATES.javascript;
-            setCode(newTemplate);
-            if (socket) {
-                socket.emit('code-change', { roomId: projectId, code: { code: newTemplate, fileIndex: activeFileIndex } });
-            }
-        } else {
-            // User has real code: only convert comment prefixes so their work isn't lost
-            const oldPrefix = COMMENT_PREFIXES[language] || '//';
-            const newPrefix = COMMENT_PREFIXES[newLang] || '//';
-            if (oldPrefix !== newPrefix) {
-                const converted = code
-                    .split('\n')
-                    .map(line => {
-                        const trimmed = line.trimStart();
-                        const indent = line.slice(0, line.length - trimmed.length);
-                        if (trimmed.startsWith(oldPrefix + ' ')) {
-                            return indent + newPrefix + ' ' + trimmed.slice(oldPrefix.length + 1);
-                        }
-                        if (trimmed === oldPrefix) {
-                            return indent + newPrefix;
-                        }
-                        return line;
-                    })
-                    .join('\n');
-                setCode(converted);
-                if (socket) {
-                    socket.emit('code-change', { roomId: projectId, code: { code: converted, fileIndex: activeFileIndex } });
-                }
-            }
-        }
+    const handleLanguageChange = (event) => {
+        const nextLanguage = event.target.value;
+        if (!Object.hasOwn(LANGUAGES, nextLanguage)) return;
+        // Changing syntax highlighting must not silently rewrite real source or string literals.
+        const nextCode = Object.values(DEFAULT_TEMPLATES).some(template => code === template)
+            ? DEFAULT_TEMPLATES[nextLanguage] || getDefaultContent(nextLanguage) : code;
+        setLanguage(nextLanguage); setCode(nextCode);
+        setFiles(previous => previous.map((file, index) => index === activeFileIndex ? { ...file, language: nextLanguage, content: nextCode } : file));
+        if (nextCode !== code) socket.emit('code-change', { roomId: projectId, code: { code: nextCode, fileIndex: activeFileIndex } });
     };
 
     return (
         <div className="h-[calc(100vh-100px)] flex flex-col lg:flex-row gap-4 lg:gap-6">
+            {editorError && <div role="alert" className="absolute top-0 left-0 right-0 z-50 bg-red-950 p-3 text-sm text-red-200">{editorError}</div>}
             {/* Left Sidebar: File Explorer */}
             <AnimatedCard className={`hidden lg:flex flex-col shrink-0 border border-white/10 bg-dark-800/80 p-4 transition-all duration-300 ${isExplorerMinimized ? 'w-16 h-fit items-center cursor-pointer hover:bg-dark-700/80' : 'w-fit min-w-[200px] max-w-[300px] h-fit max-h-full'}`} onClick={() => isExplorerMinimized && setIsExplorerMinimized(false)}>
                 {isExplorerMinimized ? (
@@ -819,6 +798,7 @@ export const CodeEditorPage = () => {
                             <Save size={16} className={isSaving ? 'animate-pulse' : ''} /> Save to Cloud
                         </Button>
                         <select
+                            aria-label="Editor language"
                             value={language}
                             onChange={handleLanguageChange}
                             className="bg-dark-800 border border-white/10 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-primary-500 transition-colors"

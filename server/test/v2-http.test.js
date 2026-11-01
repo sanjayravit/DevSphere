@@ -1,11 +1,12 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import jwt from 'jsonwebtoken';
+import { signSession } from '../config/session.js';
 
 process.env.NODE_ENV ||= 'production';
 process.env.VERCEL ||= '1';
-process.env.JWT_SECRET ||= 'test-only-jwt-secret';
+process.env.JWT_SECRET = 'test-only-jwt-secret-at-least-32-random-bytes';
+process.env.V2_ALLOWED_USER_IDS = 'http-test-user';
 const { default: app } = await import('../../api/index.js');
 const server = http.createServer(app);
 let origin;
@@ -15,7 +16,7 @@ before(async () => {
 });
 after(async () => new Promise(resolve => server.close(resolve)));
 
-const token = () => jwt.sign({ user: { id: 'http-test-user' } }, process.env.JWT_SECRET);
+const token = () => signSession('http-test-user');
 
 test('Vercel ESM adapter serves existing Express app and protects V2 endpoints', async () => {
   const health = await fetch(`${origin}/api/health`);

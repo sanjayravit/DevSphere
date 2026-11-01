@@ -134,10 +134,10 @@ export const SocialFeedPage = () => {
 
     const fetchPosts = async () => {
         try {
-            const res = await api.get('/posts').catch(() => ({ data: [] }));
+            const res = await api.get('/posts');
             setPosts(res.data || []);
         } catch (err) {
-            console.error(err);
+            showToast('The feed could not be loaded.', 'error');
         } finally {
             setLoading(false);
         }

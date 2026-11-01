@@ -1,36 +1,40 @@
 {
-    "outputDirectory": "client/build",
-    "rewrites": [
+  "outputDirectory": "client/build",
+  "rewrites": [
+    {
+      "source": "/api/ai/agent",
+      "destination": "/api/ai/agent.js"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
         {
-            "source": "/socket.io/(.*)",
-            "destination": "https://devsphere-uh2m.onrender.com/socket.io/$1"
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin-allow-popups"
         },
         {
-            "source": "/api/ai/agent",
-            "destination": "/api/ai/agent.js"
-        },
-        {
-            "source": "/api/(.*)",
-            "destination": "/api/index.js"
-        },
-        {
-            "source": "/(.*)",
-            "destination": "/index.html"
+          "key": "Cross-Origin-Embedder-Policy",
+          "value": "unsafe-none"
         }
-    ],
-    "headers": [
-        {
-            "source": "/(.*)",
-            "headers": [
-                {
-                    "key": "Cross-Origin-Opener-Policy",
-                    "value": "unsafe-none"
-                },
-                {
-                    "key": "Cross-Origin-Embedder-Policy",
-                    "value": "unsafe-none"
-                }
-            ]
-        }
-    ]
+      ]
+    }
+  ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 300
+    },
+    "api/ai/agent.js": {
+      "maxDuration": 300
+    }
+  }
 }

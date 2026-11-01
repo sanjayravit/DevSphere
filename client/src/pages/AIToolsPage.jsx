@@ -12,6 +12,7 @@ export const AIToolsPage = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [results, setResults] = useState(null);
+    const [error, setError] = useState('');
 
     const handleDragOver = (e) => {
         e.preventDefault();
@@ -31,6 +32,8 @@ export const AIToolsPage = () => {
     };
 
     const handleFileSelect = (file) => {
+        if (file.size > 2 * 1024 * 1024) { setError('Upload a PDF or TXT file no larger than 2 MB.'); return; }
+        setError('');
         const ext = file.name.split('.').pop().toLowerCase();
         if (ext === 'pdf' || ext === 'txt') {
             setSelectedFile(file);
@@ -45,7 +48,7 @@ export const AIToolsPage = () => {
         if (!resumeText.trim() && !selectedFile) return;
 
         setIsAnalyzing(true);
-        setResults(null);
+        setResults(null); setError('');
 
         try {
             let res;
@@ -59,19 +62,12 @@ export const AIToolsPage = () => {
                 res = await api.post('/ai/resume', { text: resumeText });
             }
 
-            setResults({
-                score: res.data.score || 0,
-                summary: res.data.summary || "Scan complete.",
-                strengths: res.data.strengths || [],
-                improvements: res.data.improvements || []
-            });
+            const value = res.data;
+            if (!Number.isFinite(value.score) || value.score < 0 || value.score > 100 || typeof value.summary !== 'string' || !value.summary.trim() || ![value.strengths, value.improvements].every(items => Array.isArray(items) && items.every(item => typeof item === 'string'))) throw new Error('The provider returned an invalid analysis.');
+            setResults(value);
         } catch (err) {
-            setResults({
-                score: 0,
-                summary: err.response?.data?.error || "Failed to analyze the resume. Did you configure the GEMINI_API_KEY?",
-                strengths: [],
-                improvements: []
-            });
+            setResults(null);
+            setError(err.response?.data?.error || err.message || 'Resume analysis failed. No score was generated.');
         } finally {
             setIsAnalyzing(false);
         }
@@ -87,6 +83,7 @@ export const AIToolsPage = () => {
                 <p className="text-gray-400 text-sm md:text-base">Get instant AI-driven feedback on your resume to increase your interview chances.</p>
             </div>
 
+            {error && <div role="alert" className="rounded-xl border border-red-500/30 p-4 text-red-300">{error}</div>}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Input Area */}
                 <AnimatedCard className="border border-white/5 h-max">
@@ -128,7 +125,7 @@ export const AIToolsPage = () => {
                                             <Upload size={22} className="text-primary-400" />
                                         </div>
                                         <p className="text-sm font-semibold text-white">Upload or drag & drop</p>
-                                        <p className="text-[10px] md:text-xs text-gray-500 font-medium tracking-wide">PDF or TXT (Max 5MB)</p>
+                                        <p className="text-[10px] md:text-xs text-gray-500 font-medium tracking-wide">PDF or TXT (Max 2 MB)</p>
                                     </div>
                                 )}
                             </div>
@@ -139,7 +136,7 @@ export const AIToolsPage = () => {
                                 <div className="flex-grow border-t border-white/5"></div>
                             </div>
 
-                            <textarea
+                            <textarea aria-label="Resume text" maxLength={60000}
                                 value={resumeText}
                                 onChange={(e) => {
                                     setResumeText(e.target.value);
@@ -176,7 +173,7 @@ export const AIToolsPage = () => {
                                     <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary-400" size={18} />
                                 </div>
                                 <h3 className="text-xl font-medium text-white mb-2">AI is reading…</h3>
-                                <p className="text-primary-400/80 animate-pulse text-sm">Running advanced heuristics...</p>
+                                <p className="text-primary-400/80 animate-pulse text-sm">Waiting for the configured AI provider…</p>
                             </motion.div>
                         )}
 
@@ -216,8 +213,8 @@ export const AIToolsPage = () => {
                                         </div>
                                     </div>
                                     <div className="text-center sm:text-left">
-                                        <h3 className="text-xl md:text-2xl font-bold text-white mb-1">ATS Match Score</h3>
-                                        <p className="text-gray-400 text-xs md:text-sm">Based on standard tech industry filtering.</p>
+                                        <h3 className="text-xl md:text-2xl font-bold text-white mb-1">AI review score</h3>
+                                        <p className="text-gray-400 text-xs md:text-sm">Qualitative AI feedback, not a measured ATS match.</p>
                                     </div>
                                 </AnimatedCard>
 

@@ -1,109 +1,107 @@
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import jwt from 'jsonwebtoken';
-import auth from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
+import auth, { requireRepositoryOperator } from '../middleware/auth.js';
 import { runDevSphere, executeApprovedRun } from '../engines/orchestrator.js';
 import { deployAgent } from '../agents/deployAgent.js';
-import { claimRunApproval, getRun, listRuns, updateRun } from '../services/firebaseService.js';
-import { proposalHash } from '../engines/orchestrator.js';
+import { appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun } from '../services/firebaseService.js';
+import { proposalHash, safeMessage } from '../utils/security.js';
 import { emitRoomEvent } from '../sockets/socketHandler.js';
+export { authenticateSocket } from '../sockets/authenticateSocket.js';
 
-const router = express.Router();
-const MODES = new Set(['manual', 'approval', 'assisted', 'full-auto']);
-
-const makeEmitter = (req, userId) => (event) => {
+const makeEmitter = (req, userId) => event => {
   const room = `devsphere:user:${userId}`;
-  if (process.env.VERCEL) emitRoomEvent(room, 'devsphere:update', event);
-  else req.app.get('io')?.to(room).emit('devsphere:update', event);
+  if (req.app.get('io')) req.app.get('io').to(room).emit('devsphere:update', event);
+  else emitRoomEvent(room, 'devsphere:update', event);
 };
-
-router.post('/run', auth, async (req, res) => {
-  const { input, mode = 'assisted' } = req.body || {};
-  if (typeof input !== 'string' || input.trim().length < 8 || input.length > 12_000) return res.status(400).json({ error: 'Input must be between 8 and 12,000 characters.' });
-  if (!MODES.has(mode)) return res.status(400).json({ error: 'Mode must be manual, approval, assisted, or full-auto.' });
-  try {
-    const result = await runDevSphere({ input: input.trim(), mode, userId: req.user.id, emit: makeEmitter(req, req.user.id) });
-    res.status(200).json(result);
-  } catch (error) {
-    res.status(error.message?.includes('not configured') ? 503 : 502).json({ error: error.message, runId: error.runId });
-  }
-});
-
-router.get('/runs', auth, async (req, res) => {
-  try { res.json({ runs: await listRuns(String(req.user.id), Math.min(50, Math.max(1, Number(req.query.limit) || 25))) }); }
-  catch (error) { res.status(503).json({ error: error.message }); }
-});
-
-router.get('/runs/:runId', auth, async (req, res) => {
-  try {
-    const run = await getRun(req.params.runId, String(req.user.id));
-    if (!run) return res.status(404).json({ error: 'Run not found.' });
-    res.json({ run });
-  } catch (error) { res.status(503).json({ error: error.message }); }
-});
-
-router.post('/runs/:runId/approve', auth, async (req, res) => {
-  const { approvalHash, approved = true } = req.body || {};
-  if (approved !== true) return res.status(400).json({ error: 'Use the reject endpoint to reject a proposal.' });
-  if (typeof approvalHash !== 'string' || !/^[a-f0-9]{64}$/.test(approvalHash)) return res.status(400).json({ error: 'A valid approvalHash is required.' });
-  try {
-    const existing = await getRun(req.params.runId, String(req.user.id));
-    if (!existing) return res.status(404).json({ error: 'Run not found.' });
-    const currentHash = proposalHash(existing.proposal?.changes || []);
-    const supplied = Buffer.from(approvalHash, 'hex');
-    const expected = Buffer.from(currentHash, 'hex');
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected) || currentHash !== existing.approvalHash) return res.status(409).json({ error: 'Approval hash does not match the exact current proposal.' });
-    const run = await claimRunApproval(req.params.runId, String(req.user.id), approvalHash);
-    if (!run) return res.status(409).json({ error: 'Proposal is no longer pending approval or has already been processed.' });
-    const emit = makeEmitter(req, req.user.id);
-    emit({ runId: run.id, step: 'approval', status: 'approved', at: new Date().toISOString() });
-    const result = await executeApprovedRun({ run, userId: req.user.id, emit });
-    res.json(result);
-  } catch (error) {
-    await updateRun(req.params.runId, String(req.user.id), { status: 'failed', error: error.message }).catch(() => null);
-    res.status(502).json({ error: error.message });
-  }
-});
-
-router.post('/runs/:runId/reject', auth, async (req, res) => {
-  try {
-    const run = await getRun(req.params.runId, String(req.user.id));
-    if (!run) return res.status(404).json({ error: 'Run not found.' });
-    if (run.status !== 'pending_approval' || run.approval !== 'pending') return res.status(409).json({ error: 'This run is not awaiting approval.' });
-    const updated = await updateRun(run.id, String(req.user.id), { status: 'rejected', approval: 'rejected' });
-    makeEmitter(req, req.user.id)({ runId: run.id, step: 'approval', status: 'rejected', at: new Date().toISOString() });
-    res.json({ run: updated });
-  } catch (error) { res.status(503).json({ error: error.message }); }
-});
-
-router.post('/runs/:runId/deploy', auth, async (req, res) => {
-  try {
-    const run = await getRun(req.params.runId, String(req.user.id));
-    if (!run) return res.status(404).json({ error: 'Run not found.' });
-    if (!run.pullNumber || !['pull_request', 'deployment_skipped', 'deployment_failed'].includes(run.status)) return res.status(409).json({ error: 'A successfully created pull request is required before deployment.' });
-    if (run.decision?.decision === 'ask' && run.approval !== 'approved') return res.status(403).json({ error: 'This workflow has not been approved.' });
-    const outcome = await deployAgent({ repo: run.proposal.repository, pullNumber: run.pullNumber });
-    const status = outcome.status === 'deployed' ? 'deployed' : outcome.status === 'failed' ? 'deployment_failed' : outcome.status === 'pending' ? 'deployment_pending' : 'deployment_skipped';
-    await updateRun(run.id, String(req.user.id), { deployment: outcome, status });
-    makeEmitter(req, req.user.id)({ runId: run.id, step: 'deployment', status: outcome.status, detail: outcome, at: new Date().toISOString() });
-    res.json({ deployment: outcome });
-  } catch (error) {
-    await updateRun(req.params.runId, String(req.user.id), { deployment: { status: 'failed', reason: error.message }, status: 'deployment_failed' }).catch(() => null);
-    res.status(502).json({ error: error.message });
-  }
-});
-
-export function authenticateSocket(socket, next) {
-  try {
-    const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('Authentication required'));
-    if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') return next(new Error('Socket authentication is not configured'));
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_dev_secret');
-    const user = decoded.user || decoded;
-    if (!user?.id) return next(new Error('Invalid authentication token'));
-    socket.data.userId = String(user.id);
-    next();
-  } catch { next(new Error('Invalid authentication token')); }
+function respondError(res, error) {
+  if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
+  return res.status(error.status && error.status >= 400 && error.status < 600 ? error.status : 502).json({ error: safeMessage(error), code: error.code, runId: error.runId });
 }
-
-export default router;
+const validHash = hash => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash);
+export function createV2Router(overrides = {}) {
+  const services = { runDevSphere, executeApprovedRun, deployAgent, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun, ...overrides };
+  const router = express.Router();
+  router.use(auth, rateLimit({ limit: 120 }));
+  router.param('runId', (req, res, next, runId) => /^[A-Za-z0-9_-]{1,128}$/.test(runId) ? next() : res.status(400).json({ error: 'Invalid run ID.' }));
+  router.post('/run', requireRepositoryOperator, async (req, res) => {
+    const { input, mode = 'assisted', requestId } = req.body || {};
+    if (typeof input !== 'string' || input.trim().length < 8 || input.length > 12_000) return res.status(400).json({ error: 'Input must be between 8 and 12,000 characters.' });
+    if (!['manual', 'approval', 'assisted', 'full-auto'].includes(mode)) return res.status(400).json({ error: 'Mode must be manual, approval, assisted, or full-auto.' });
+    if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(requestId))) return res.status(400).json({ error: 'Invalid request ID.' });
+    try { res.json(await services.runDevSphere({ input: input.trim(), mode, requestId, userId: req.user.id, emit: makeEmitter(req, req.user.id) })); }
+    catch (error) { respondError(res, error); }
+  });
+  router.get('/runs', async (req, res) => {
+    const limit = req.query.limit === undefined ? 25 : Number(req.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) return res.status(400).json({ error: 'limit must be an integer from 1 to 50.' });
+    try { res.json({ runs: await services.listRuns(req.user.id, limit) }); }
+    catch (error) { respondError(res, error); }
+  });
+  router.get('/runs/:runId', async (req, res) => {
+    try {
+      const run = await services.getRun(req.params.runId, req.user.id);
+      if (!run) return res.status(404).json({ error: 'Run not found.' });
+      res.json({ run });
+    } catch (error) { respondError(res, error); }
+  });
+  router.post('/runs/:runId/approve', requireRepositoryOperator, async (req, res) => {
+    const { approvalHash, approved = true } = req.body || {};
+    if (approved !== true || !validHash(approvalHash)) return res.status(400).json({ error: 'Explicit approval and a valid approvalHash are required.' });
+    try {
+      const existing = await services.getRun(req.params.runId, req.user.id);
+      if (!existing) return res.status(404).json({ error: 'Run not found.' });
+      const currentHash = proposalHash(existing.proposal || {});
+      if (!timingSafeEqual(Buffer.from(approvalHash, 'hex'), Buffer.from(currentHash, 'hex')) || currentHash !== existing.approvalHash) return res.status(409).json({ error: 'Approval hash does not match the exact current proposal.' });
+      // Revalidate the hash, QA and state in the SAME transaction as the claim.
+      const run = await services.claimRunApproval(req.params.runId, req.user.id, approvalHash);
+      if (!run) return res.status(409).json({ error: 'Proposal is not eligible or has already been processed.' });
+      const emit = makeEmitter(req, req.user.id);
+      emit({ runId: run.id, step: 'approval', status: 'approved', at: new Date().toISOString() });
+      res.json(await services.executeApprovedRun({ run, userId: req.user.id, emit }));
+    } catch (error) { respondError(res, error); }
+  });
+  router.post('/runs/:runId/reject', requireRepositoryOperator, async (req, res) => {
+    if (!validHash(req.body?.approvalHash)) return res.status(400).json({ error: 'A valid approvalHash is required.' });
+    try {
+      if (!await services.getRun(req.params.runId, req.user.id)) return res.status(404).json({ error: 'Run not found.' });
+      const run = await services.rejectRunApproval(req.params.runId, req.user.id, req.body.approvalHash);
+      if (!run) return res.status(409).json({ error: 'This exact proposal is no longer awaiting approval.' });
+      makeEmitter(req, req.user.id)({ runId: run.id, step: 'approval', status: 'rejected', at: new Date().toISOString() });
+      res.json({ run });
+    } catch (error) { respondError(res, error); }
+  });
+  router.post('/runs/:runId/deploy', requireRepositoryOperator, async (req, res) => {
+    let claimed;
+    let providerOutcome;
+    try {
+      if (!await services.getRun(req.params.runId, req.user.id)) return res.status(404).json({ error: 'Run not found.' });
+      claimed = await services.claimRunDeployment(req.params.runId, req.user.id);
+      if (!claimed) return res.status(409).json({ error: 'A QA-passing, authorized PR is required and deployment must not already be in progress.' });
+      const outcome = providerOutcome = await services.deployAgent({ repo: claimed.proposal.repository, pullNumber: claimed.pullNumber, commitSha: claimed.commitSha, deployment: claimed.status === 'deployment_pending' ? claimed.deployment : undefined });
+      const statuses = { deployed: 'deployed', failed: 'deployment_failed', pending: 'deployment_pending', skipped: 'deployment_skipped' };
+      if (!statuses[outcome.status]) throw new Error('Invalid deployment outcome.');
+      await services.updateRun(claimed.id, req.user.id, { deployment: outcome, status: statuses[outcome.status] });
+      const event = await services.appendRunEvent(claimed.id, req.user.id, { step: 'deployment', status: outcome.status, detail: outcome });
+      makeEmitter(req, req.user.id)(event);
+      res.json({ deployment: outcome });
+    } catch (error) {
+      if (claimed) {
+        // A persistence/event failure AFTER a provider outcome is not a failed
+        // deployment. Likewise, a failed status read is not permission to create
+        // another deployment: preserve the original ID and refresh it again.
+        const outcome = providerOutcome && ['deployed', 'failed', 'pending', 'skipped'].includes(providerOutcome.status) ? providerOutcome
+          : claimed.status === 'deployment_pending' && claimed.deployment?.deploymentId
+            ? { ...claimed.deployment, status: 'pending', verification: 'unavailable', reason: `Provider status could not be refreshed; no new deployment was created. ${safeMessage(error)}` }
+            : { status: error.ambiguous ? 'unknown' : 'failed', reason: safeMessage(error) };
+        const statuses = { deployed: 'deployed', failed: 'deployment_failed', pending: 'deployment_pending', skipped: 'deployment_skipped', unknown: 'deployment_unknown' };
+        await services.updateRun(claimed.id, req.user.id, { deployment: outcome, status: statuses[outcome.status] }).catch(() => null);
+        const event = await services.appendRunEvent(claimed.id, req.user.id, { step: 'deployment', status: outcome.status, detail: outcome }).catch(() => null);
+        if (event) makeEmitter(req, req.user.id)(event);
+      }
+      respondError(res, error);
+    }
+  });
+  return router;
+}
+export default createV2Router();

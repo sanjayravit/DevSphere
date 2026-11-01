@@ -2,7 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import envCompatible from 'vite-plugin-env-compatible';
 import svgr from 'vite-plugin-svgr';
-import path from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const directory = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
     plugins: [
@@ -12,14 +14,14 @@ export default defineConfig({
     ],
     resolve: {
         alias: {
-            '@': path.resolve(__dirname, './src'),
+            '@': path.resolve(directory, './src'),
         },
     },
     server: {
         host: '0.0.0.0',
-        allowedHosts: true,
+        allowedHosts: ['localhost', '.localhost', '.e2b.app'],
         port: 3000,
-        open: true,
+        open: false,
         proxy: {
             '/api': {
                 target: 'http://localhost:5050',

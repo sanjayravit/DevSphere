@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { io } from 'socket.io-client';
 import api from '../services/api';
+import { socketOrigin } from '../services/socket';
 import {
     Activity, CheckCircle, ServerCrash, BrainCircuit,
     Github, Layers, FolderDot, ChevronDown, Cpu,
@@ -18,7 +19,7 @@ const timeAgo = (date) => {
     return `${Math.floor(hours / 24)}d ago`;
 };
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
+
 
 const StatusBadge = ({ monitoring }) => (
     <div className={`inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border text-sm font-medium transition-all duration-500 ${monitoring
@@ -43,7 +44,7 @@ const StatusBadge = ({ monitoring }) => (
 );
 
 export const SelfHealingPage = () => {
-    const { workspaces, activeWorkspace, projects } = useWorkspace();
+    const { workspaces, activeWorkspace, projects, changeWorkspace } = useWorkspace();
 
     const [selectedScope, setSelectedScope] = useState('workspace');   // 'workspace' | 'project'
     const [selectedWorkspace, setSelectedWorkspace] = useState(null);
@@ -54,7 +55,10 @@ export const SelfHealingPage = () => {
     const [monitoring, setMonitoring] = useState(false);
     const [loading, setLoading] = useState(false);
     const [events, setEvents] = useState([]);
+    const [error, setError] = useState('');
+    const [repository, setRepository] = useState('');
     const socketRef = useRef(null);
+    const monitoringGeneration = useRef(0);
 
     // Default selections to active context
     useEffect(() => {
@@ -71,41 +75,51 @@ export const SelfHealingPage = () => {
         ? selectedProject?.name
         : selectedWorkspace?.name;
 
-    const fetchHistory = async () => {
-        if (!targetId) return;
+    const fetchHistory = async (generation) => {
+        if (!targetId) return false;
         try {
-            const res = await api.get(`/webhook/history?projectId=${targetId}`);
-            if (res.data?.events) setEvents(res.data.events);
+            const res = await api.get(`/webhook/history?projectId=${targetId}&scope=${selectedScope}`);
+            if (monitoringGeneration.current !== generation) return false;
+            if (!Array.isArray(res.data?.events)) throw new Error('Invalid event history response.');
+            setEvents(res.data.events);
+            return true;
         } catch (err) {
-            console.error('History fetch failed', err);
+            if (monitoringGeneration.current === generation) setError(err.response?.data?.error || 'Event history is unavailable.');
+            return false;
         }
     };
 
     const handleEnableMonitoring = async () => {
-        if (!targetId || monitoring) return;
-        setLoading(true);
-        await fetchHistory();
-
-        socketRef.current = io(SOCKET_URL, { auth: { token: localStorage.getItem('token') } });
-
-        socketRef.current.on('error_detected', (data) => {
-            setEvents(prev => [{ ...data, type: 'ERROR_DETECTED', id: `${Date.now()}`, timestamp: new Date().toISOString() }, ...prev]);
-        });
-        socketRef.current.on('deployment_failed', (data) => {
-            setEvents(prev => [{ ...data, type: 'VERCEL_ERROR_DETECTED', id: `${Date.now()}`, timestamp: new Date().toISOString() }, ...prev]);
-        });
-        socketRef.current.on('fix_generated', (data) => {
-            setEvents(prev => [{ ...data, type: 'FIX_GENERATED', id: `${Date.now()}`, timestamp: new Date().toISOString() }, ...prev]);
-        });
-        socketRef.current.on('pr_created', (data) => {
-            setEvents(prev => [{ ...data, type: 'PR_CREATED', id: `${Date.now()}`, timestamp: new Date().toISOString() }, ...prev]);
-        });
-
-        setLoading(false);
-        setMonitoring(true);
+        if (!targetId || monitoring || loading) return;
+        const generation = ++monitoringGeneration.current;
+        const current = () => monitoringGeneration.current === generation;
+        setWorkspaceDropOpen(false); setProjectDropOpen(false);
+        setLoading(true); setError('');
+        if (!await fetchHistory(generation) || !current()) { if (current()) setLoading(false); return; }
+        try {
+            socketRef.current?.disconnect();
+            socketRef.current = io(socketOrigin(), { auth: { token: localStorage.getItem('token') } });
+            socketRef.current.on('connect', () => { if (current()) { setMonitoring(true); setLoading(false); setError(''); } });
+            socketRef.current.on('disconnect', () => { if (current()) setMonitoring(false); });
+            socketRef.current.on('connect_error', () => { if (current()) { setMonitoring(false); setLoading(false); setError('Live monitoring could not authenticate or reach the persistent socket server.'); } });
+            socketRef.current.on('webhook:event', data => {
+                if (!current() || (selectedScope === 'project' ? data.projectId !== targetId : data.workspaceId !== targetId)) return;
+                setEvents(previous => [data, ...previous.filter(item => item.id !== data.id)].slice(0, 50));
+            });
+        } catch {
+            if (current()) { setMonitoring(false); setLoading(false); setError('Live monitoring could not be started.'); }
+        }
+    };
+    const configureMonitoring = async () => {
+        try {
+            await api.post('/webhook/configuration', { projectId: selectedProject?.id, repository });
+            setError('');
+        } catch (err) { setError(err.response?.data?.error || 'Webhook mapping could not be configured.'); }
     };
 
     const handleStopMonitoring = () => {
+        monitoringGeneration.current += 1;
+        setLoading(false);
         if (socketRef.current) {
             socketRef.current.disconnect();
             socketRef.current = null;
@@ -113,7 +127,7 @@ export const SelfHealingPage = () => {
         setMonitoring(false);
     };
 
-    useEffect(() => () => socketRef.current?.disconnect(), []);
+    useEffect(() => () => { monitoringGeneration.current += 1; socketRef.current?.disconnect(); }, []);
 
     return (
         <div className="w-full min-h-full bg-dark-900 overflow-y-auto custom-scrollbar">
@@ -131,12 +145,18 @@ export const SelfHealingPage = () => {
                             </h1>
                         </div>
                         <p className="text-gray-400 text-sm leading-relaxed max-w-lg">
-                            Select a workspace or project to begin monitoring. The AI agent will autonomously detect errors, generate fixes, and open pull requests.
+                            View signed provider events for your workspace or project. Investigate real failures in V2; fixes always pass QA and server-side approval policy before any pull request is created.
                         </p>
                     </div>
                     <StatusBadge monitoring={monitoring} />
                 </div>
 
+                {error && <div role="alert" className="rounded-xl border border-red-500/30 p-4 text-sm text-red-300">{error}</div>}
+                {selectedScope === 'project' && selectedProject && <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <input aria-label="Repository for monitoring" placeholder="owner/repository" value={repository} onChange={event => setRepository(event.target.value)} className="rounded-lg bg-dark-800 p-3 text-white" />
+                    <button onClick={configureMonitoring} className="rounded-lg border border-white/10 p-3">Save webhook repository mapping</button>
+                    <p className="text-xs text-gray-500">Workspace owner only. Configure provider secrets on the server and send webhooks to /api/webhook?projectId={selectedProject.id}.</p>
+                </div>}
                 {/* ─── Agent Config Card ───────────────────────── */}
                 <div className="p-7 rounded-3xl border border-white/10 bg-dark-800/60 backdrop-blur-xl space-y-6 shadow-xl">
                     {/* Scope toggle */}
@@ -146,7 +166,7 @@ export const SelfHealingPage = () => {
                             {['workspace', 'project'].map(scope => (
                                 <button
                                     key={scope}
-                                    disabled={monitoring}
+                                    disabled={monitoring || loading}
                                     onClick={() => { setSelectedScope(scope); setProjectDropOpen(false); setWorkspaceDropOpen(false); }}
                                     className={`flex items-center gap-2 px-5 py-2.5 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed ${selectedScope === scope
                                         ? 'bg-primary-500/20 text-primary-300 shadow-inner'
@@ -164,7 +184,7 @@ export const SelfHealingPage = () => {
                     <div className="relative">
                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Workspace</label>
                         <button
-                            disabled={monitoring}
+                            disabled={monitoring || loading}
                             onClick={() => { setWorkspaceDropOpen(p => !p); setProjectDropOpen(false); }}
                             className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-dark-900 border border-white/10 hover:border-primary-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -177,7 +197,7 @@ export const SelfHealingPage = () => {
                         {workspaceDropOpen && (
                             <div className="absolute z-50 top-full left-0 w-full mt-2 bg-dark-800 border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
                                 {workspaces.map(w => (
-                                    <button key={w.id} onClick={() => { setSelectedWorkspace(w); setWorkspaceDropOpen(false); setSelectedProject(null); }}
+                                    <button key={w.id} onClick={() => { setSelectedWorkspace(w); changeWorkspace(w); setSelectedProject(null); setWorkspaceDropOpen(false); setSelectedProject(null); }}
                                         className={`w-full text-left px-4 py-3 text-sm flex items-center gap-3 hover:bg-white/5 transition-colors ${selectedWorkspace?.id === w.id ? 'text-primary-400 bg-primary-500/5' : 'text-gray-300'}`}>
                                         <Layers size={14} />
                                         {w.name}
@@ -192,7 +212,7 @@ export const SelfHealingPage = () => {
                         <div className="relative">
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Project</label>
                             <button
-                                disabled={monitoring}
+                                disabled={monitoring || loading}
                                 onClick={() => { setProjectDropOpen(p => !p); setWorkspaceDropOpen(false); }}
                                 className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-dark-900 border border-white/10 hover:border-primary-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -331,6 +351,8 @@ const EventCard = ({ event }) => {
                         {event.explanation}
                     </div>
                 )}
+                {event.note && <p className="text-xs text-gray-400">{event.note}</p>}
+                {event.suggestedIntent && <a href={`/v2?intent=${encodeURIComponent(event.suggestedIntent)}`} className="inline-flex rounded-lg border border-primary-400/30 p-2 text-sm text-primary-300">Investigate with V2</a>}
                 {event.prUrl && (
                     <a href={event.prUrl} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-sm font-bold border border-emerald-500/25 transition-all hover:scale-[1.02]">

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef } from 'react';
+import { getPublicGithub, validGithubOwner, githubError, publicWebUrl } from '../services/publicGithub';
 import { AnimatedCard } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -12,27 +12,33 @@ export const ProfilePage = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+    const request = useRef(null);
+    useEffect(() => () => request.current?.abort(), []);
     const fetchGithubProfile = async (e) => {
         e.preventDefault();
-        if (!username.trim()) return;
+        const login = username.trim();
+        if (!validGithubOwner(login)) { setError('Enter a valid GitHub username (1–39 letters, digits or hyphens).'); return; }
+        request.current?.abort(); const controller = new AbortController(); request.current = controller;
 
         setLoading(true);
-        setError('');
+        setError(''); setProfile(null); setRepos([]);
 
         try {
             const [profileRes, reposRes] = await Promise.all([
-                axios.get(`https://api.github.com/users/${username}`),
-                axios.get(`https://api.github.com/users/${username}/repos?sort=updated&per_page=6`)
+                getPublicGithub(`/users/${encodeURIComponent(login)}`, controller.signal),
+                getPublicGithub(`/users/${encodeURIComponent(login)}/repos?sort=updated&per_page=6`, controller.signal)
             ]);
 
-            setProfile(profileRes.data);
-            setRepos(reposRes.data);
+            if (controller.signal.aborted) return;
+            if (!profileRes?.login || !Number.isInteger(profileRes.id) || !Array.isArray(reposRes)) throw new Error('Invalid GitHub profile response.');
+            setProfile(profileRes); setRepos(reposRes);
         } catch (err) {
-            setError('GitHub user not found or API rate limit exceeded.');
+            if (controller.signal.aborted) return;
+            setError(githubError(err));
             setProfile(null);
             setRepos([]);
         } finally {
-            setLoading(false);
+            if (!controller.signal.aborted) setLoading(false);
         }
     };
 
@@ -58,7 +64,7 @@ export const ProfilePage = () => {
             </div>
 
             {error && (
-                <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-center">
+                <div role="alert" className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-center">
                     {error}
                 </div>
             )}
@@ -87,7 +93,7 @@ export const ProfilePage = () => {
                             />
                             <h2 className="text-2xl font-bold text-white">{profile.name || profile.login}</h2>
                             <a
-                                href={profile.html_url}
+                                href={`https://github.com/${encodeURIComponent(profile.login)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-primary-400 hover:text-primary-300 transition-colors text-sm font-medium"
@@ -122,9 +128,9 @@ export const ProfilePage = () => {
                                         <MapPin size={16} /> <span>{profile.location}</span>
                                     </div>
                                 )}
-                                {profile.blog && (
+                                {profile.blog && publicWebUrl(profile.blog) && (
                                     <div className="flex items-center gap-3 text-primary-400 hover:underline">
-                                        <LinkIcon size={16} /> <a href={profile.blog.startsWith('http') ? profile.blog : `https://${profile.blog}`} target="_blank" rel="noreferrer">{profile.blog}</a>
+                                        <LinkIcon size={16} /> <a href={publicWebUrl(profile.blog)} target="_blank" rel="noreferrer">{profile.blog}</a>
                                     </div>
                                 )}
                             </div>
@@ -139,7 +145,7 @@ export const ProfilePage = () => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {repos.map((repo, i) => (
-                                <AnimatedCard key={repo.id} delay={0.1 * i} className="flex flex-col hover:border-primary-500/30 transition-colors cursor-pointer" onClick={() => window.open(repo.html_url, '_blank')}>
+                                <AnimatedCard key={repo.id} delay={0.1 * i} className="flex flex-col hover:border-primary-500/30 transition-colors cursor-pointer" onClick={() => window.open(`https://github.com/${encodeURIComponent(repo.owner.login)}/${encodeURIComponent(repo.name)}`, '_blank', 'noopener,noreferrer')}>
                                     <div className="flex justify-between items-start mb-2">
                                         <h4 className="text-white font-semibold text-lg truncate pr-4 text-primary-400 hover:underline">
                                             {repo.name}
@@ -172,7 +178,7 @@ export const ProfilePage = () => {
                                             className="w-full gap-2 border-white/10 hover:border-primary-500/50"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                window.open(`/repo/${repo.owner.login}/${repo.name}`, "_blank");
+                                                window.open(`/repo/${encodeURIComponent(repo.owner.login)}/${encodeURIComponent(repo.name)}`, '_blank', 'noopener,noreferrer');
                                             }}
                                         >
                                             <LinkIcon size={16} /> Open in DevSphere Workspace

@@ -1,167 +1,97 @@
-import express from "express";
-const router = express.Router();
-import errorAgent from "../agents/errorAgent.js";
-import fixAgent from "../agents/fixAgent.js";
-import githubService from "../services/githubService.js";
-import firebaseService from "../services/firebaseService.js";
-import socketHandler from "../sockets/socketHandler.js";
-import vercelService from "../services/vercelService.js";
-import firebaseAdmin from "../firebaseAdmin.js";
-import crypto from "crypto";
-const verifyGithubSignature = (req) => {
-    const signature = req.headers['x-hub-signature-256'];
-    if (!signature) return false;
-    const secret = process.env.GITHUB_WEBHOOK_SECRET;
-    if (!secret) {
-        console.warn("GITHUB_WEBHOOK_SECRET not set, skipping verification");
-        return true;
-    }
-    const hmac = crypto.createHmac('sha256', secret);
-    const digest = Buffer.from('sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex'), 'utf8');
-    const checksum = Buffer.from(signature, 'utf8');
-    return checksum.length === digest.length && crypto.timingSafeEqual(digest, checksum);
-};
+import express from 'express';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import auth, { requireRepositoryOperator } from '../middleware/auth.js';
+import { getProjectForUser } from '../middleware/projectAccess.js';
+import Project from '../models/Project.js';
+import Workspace from '../models/Workspace.js';
+import { requireDb, recordProjectEvent } from '../services/firebaseService.js';
+import { emitRoomEvent } from '../sockets/socketHandler.js';
+import { safeMessage } from '../utils/security.js';
 
-router.get("/history", async (req, res) => {
+export function verifyWebhookSignature(req, source) {
+  const secret = process.env[source === 'github' ? 'GITHUB_WEBHOOK_SECRET' : 'VERCEL_WEBHOOK_SECRET'];
+  if (!secret) return { ok: false, configured: false };
+  const raw = req.rawBody;
+  if (!Buffer.isBuffer(raw)) return { ok: false, configured: true };
+  const signature = req.headers[source === 'github' ? 'x-hub-signature-256' : 'x-vercel-signature'];
+  const expected = source === 'github' ? `sha256=${createHmac('sha256', secret).update(raw).digest('hex')}` : createHmac('sha1', secret).update(raw).digest('hex');
+  if (typeof signature !== 'string' || signature.length !== expected.length) return { ok: false, configured: true };
+  return { ok: timingSafeEqual(Buffer.from(signature), Buffer.from(expected)), configured: true };
+}
+export function createWebhookRouter(overrides = {}) {
+  const services = { getProjectForUser, findProject: Project.findById, findWorkspace: Workspace.findById, saveProject: Project.save, requireDb, recordProjectEvent, emitRoomEvent, ...overrides };
+  const router = express.Router();
+  router.get('/history', auth, async (req, res) => {
     try {
-        const projectId = req.query.projectId || "default_project";
-        if (!firebaseAdmin.db) return res.status(200).json({ events: [] });
-
-        const snapshot = await firebaseAdmin.db.collection('projects').doc(projectId).collection('events')
-            .orderBy('timestamp', 'desc')
-            .limit(50)
-            .get();
-
-        const events = [];
-        snapshot.forEach(doc => {
-            events.push({ id: doc.id, ...doc.data() });
-        });
-
-        res.status(200).json({ events });
-    } catch (error) {
-        console.error("Error fetching history:", error);
-        res.status(500).json({ error: "Failed to fetch event history" });
-    }
-});
-
-router.post("/", async (req, res) => {
+      const scope = req.query.scope || 'project';
+      let projectIds;
+      if (scope === 'workspace') {
+        const workspaceId = req.query.projectId;
+        if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(workspaceId)) return res.status(400).json({ error: 'Invalid workspace ID.' });
+        const workspace = await services.findWorkspace(workspaceId);
+        if (!workspace?.members?.includes(req.user.id)) return res.status(404).json({ error: 'Workspace not found.' });
+        const projects = await services.requireDb().collection('projects').where('workspaceId', '==', workspaceId).limit(50).get();
+        projectIds = projects.docs.map(doc => doc.id);
+      } else if (scope === 'project') {
+        const project = await services.getProjectForUser(req.query.projectId, req.user.id);
+        projectIds = [project.id];
+      } else return res.status(400).json({ error: 'Invalid history scope.' });
+      const records = await Promise.all(projectIds.map(async id => {
+        const snapshot = await services.requireDb().collection('projects').doc(id).collection('events').orderBy('timestamp', 'desc').limit(50).get();
+        return snapshot.docs.map(doc => ({ ...doc.data(), projectId: id, id: doc.id }));
+      }));
+      res.json({ events: records.flat().sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 50) });
+    } catch (error) { res.status(error.status || 503).json({ error: error.status ? safeMessage(error) : 'Event history is unavailable.' }); }
+  });
+  router.post('/configuration', auth, requireRepositoryOperator, async (req, res) => {
     try {
-        const githubEvent = req.headers['x-github-event'];
-        const vercelSignature = req.headers['x-vercel-signature'];
-        const payload = req.body;
-
-        console.log(`[Webhook] Received Event - GitHub: ${githubEvent}, Vercel: ${!!vercelSignature}`);
-
-        // Security: Verify GitHub Signature
-        if (githubEvent && !verifyGithubSignature(req)) {
-            console.error("[Webhook] Invalid GitHub signature");
-            return res.status(401).json({ error: "Invalid signature" });
+      const project = await services.getProjectForUser(req.body?.projectId, req.user.id);
+      const workspace = await services.findWorkspace(project.workspaceId);
+      if (workspace.owner !== req.user.id) return res.status(403).json({ error: 'Only the workspace owner may configure repository webhooks.' });
+      const repository = req.body?.repository;
+      if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || repository.toLowerCase() !== process.env.GITHUB_REPOSITORY?.toLowerCase()) return res.status(400).json({ error: 'Repository must match the server-configured GITHUB_REPOSITORY.' });
+      await services.saveProject(project.id, { configuration: { ...project.configuration, repository } });
+      res.json({ projectId: project.id, repository });
+    } catch (error) { res.status(error.status || 503).json({ error: safeMessage(error) }); }
+  });
+  router.post('/', async (req, res) => {
+    const source = req.headers['x-github-event'] ? 'github' : req.headers['x-vercel-signature'] ? 'vercel' : null;
+    if (!source) return res.status(400).json({ error: 'A signed GitHub or Vercel event is required.' });
+    const verified = verifyWebhookSignature(req, source);
+    if (!verified.configured) return res.status(503).json({ error: `${source} webhook verification is not configured.` });
+    if (!verified.ok) return res.status(401).json({ error: 'Invalid webhook signature.' });
+    try {
+      const projectId = req.query.projectId;
+      if (typeof projectId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) return res.status(400).json({ error: 'A configured projectId is required.' });
+      const project = await services.findProject(projectId);
+      const workspace = project && await services.findWorkspace(project.workspaceId);
+      if (!project || !workspace || !project.configuration?.repository) return res.status(404).json({ error: 'Webhook target is not configured.' });
+      const payload = req.body || {};
+      const meta = payload.payload?.deployment?.meta || {};
+      const repo = source === 'github' ? payload.repository?.full_name : meta.githubCommitOrg && meta.githubCommitRepo ? `${meta.githubCommitOrg}/${meta.githubCommitRepo}` : null;
+      if (typeof repo !== 'string' || repo.toLowerCase() !== project.configuration.repository.toLowerCase()) return res.status(403).json({ error: 'Webhook repository does not match this project.' });
+      const kind = source === 'github' ? req.headers['x-github-event'] : payload.type;
+      const failed = source === 'github' ? kind === 'check_run' && payload.action === 'completed' && ['failure', 'timed_out', 'action_required', 'cancelled'].includes(payload.check_run?.conclusion) : ['deployment.error', 'deployment.canceled'].includes(kind);
+      const message = failed ? source === 'github' ? payload.check_run?.output?.summary || payload.check_run?.output?.title || `GitHub check ${payload.check_run?.name || '(unnamed)'} concluded ${payload.check_run?.conclusion}.` : `Vercel reported ${kind} for deployment ${payload.payload?.deployment?.id || '(unknown)'}.` : null;
+      const event = {
+        type: failed ? source === 'vercel' ? 'VERCEL_ERROR_DETECTED' : 'ERROR_DETECTED' : 'PROVIDER_EVENT', source, repo, projectId, workspaceId: project.workspaceId,
+        providerEvent: String(kind).slice(0, 100), ...(message ? { error: String(message).slice(0, 4_000), suggestedIntent: `Investigate the ${source} failure in ${repo}: ${String(message).slice(0, 2_000)}. Use actual repository context, propose a minimal fix and validate it.` } : {}),
+        execution: 'not-requested', note: 'Provider evidence only. Open a V2 run to generate a QA-checked, policy-gated proposal. Webhooks never execute changes.'
+      };
+      // Await the durable write BEFORE acknowledgement (serverless-safe); the
+      // signed body hash deduplicates even if a replay changes delivery headers.
+      const deliveryId = createHash('sha256').update(source).update(req.rawBody).digest('hex');
+      const stored = await services.recordProjectEvent(projectId, event, deliveryId);
+      if (stored) {
+        for (const userId of new Set(workspace.members || [])) {
+          const room = `devsphere:user:${userId}`;
+          services.emitRoomEvent(room, 'webhook:event', stored);
+          if (failed) services.emitRoomEvent(room, source === 'vercel' ? 'deployment_failed' : 'error_detected', stored);
         }
-
-        // Acknowledge receipt immediately
-        res.status(200).json({ status: "received", githubEvent, vercel: !!vercelSignature });
-
-        const projectId = req.query.projectId || "default_project";
-
-        // Handle Vercel Deployment Webhook
-        if (vercelSignature && payload.type && payload.type.startsWith('deployment.')) {
-            if (payload.type === 'deployment.error' || payload.type === 'deployment.canceled') {
-                const repoName = payload.payload.deployment?.meta?.githubCommitRepo || "Unknown Repo";
-                const deploymentId = payload.payload.deployment?.id;
-
-                socketHandler.emitGlobalEvent("deployment_failed", { repo: repoName, deploymentId });
-
-                // Fetch logs
-                const logs = await vercelService.getDeploymentLogs(deploymentId);
-                const errorData = errorAgent.detectErrors({}, logs);
-
-                if (errorData.error) {
-                    socketHandler.emitGlobalEvent("error_detected", { repo: repoName, source: "vercel", ...errorData });
-
-                    await firebaseService.logEvent(projectId, {
-                        type: "VERCEL_ERROR_DETECTED",
-                        repo: repoName,
-                        error: errorData.error,
-                        deploymentId
-                    });
-
-                    // Follow the fix generation pipeline
-                    const fixData = await fixAgent.generateFixForError(errorData, projectId);
-                    if (fixData && fixData.fixedCode) {
-                        socketHandler.emitGlobalEvent("fix_generated", { repo: repoName, source: "vercel", ...fixData });
-
-                        await firebaseService.logEvent(projectId, {
-                            type: "FIX_GENERATED",
-                            repo: repoName,
-                            errorData: errorData,
-                            explanation: fixData.explanation,
-                            source: "vercel"
-                        });
-
-                        const branchName = `vercel-hotfix-${Date.now()}`;
-                        const prUrl = await githubService.createPullRequest(repoName, fixData.fixedCode, branchName, "Automated Vercel deployment fix");
-
-                        socketHandler.emitGlobalEvent("pr_created", { repo: repoName, source: "vercel", prUrl });
-
-                        await firebaseService.logEvent(projectId, {
-                            type: "PR_CREATED",
-                            repo: repoName,
-                            prUrl: prUrl,
-                            source: "vercel"
-                        });
-                    }
-                }
-            }
-            return; // Finished processing Vercel event
-        }
-
-        // MVP: Handle GitHub push events or simulated webhook triggers
-        if (githubEvent === "push" || !githubEvent) {
-            const repoName = payload.repository?.full_name || "Unknown Repo";
-
-            // 1. Error Detection
-            const mockLogs = "Simulated Error: Cannot read properties of undefined"; // Simulating failing CI logs
-            const errorData = errorAgent.detectErrors(payload, mockLogs);
-
-            if (errorData.error && errorData.error !== "No immediate errors detected.") {
-                socketHandler.emitGlobalEvent("error_detected", { repo: repoName, ...errorData });
-
-                await firebaseService.logEvent(projectId, {
-                    type: "ERROR_DETECTED",
-                    repo: repoName,
-                    error: errorData.error
-                });
-
-                // 2. Fix Generation
-                const fixData = await fixAgent.generateFixForError(errorData, projectId);
-
-                if (fixData && fixData.fixedCode) {
-                    socketHandler.emitGlobalEvent("fix_generated", { repo: repoName, ...fixData });
-
-                    await firebaseService.logEvent(projectId, {
-                        type: "FIX_GENERATED",
-                        repo: repoName,
-                        errorData: errorData,
-                        explanation: fixData.explanation
-                    });
-
-                    // 3. GitHub PR Creation
-                    const branchName = `auto-fix-${Date.now()}`;
-                    const prUrl = await githubService.createPullRequest(repoName, fixData.fixedCode, branchName, "Automated fix by DevSphere");
-
-                    socketHandler.emitGlobalEvent("pr_created", { repo: repoName, prUrl });
-
-                    await firebaseService.logEvent(projectId, {
-                        type: "PR_CREATED",
-                        repo: repoName,
-                        prUrl: prUrl
-                    });
-                }
-            }
-        }
-    } catch (error) {
-        console.error("Webhook processing error:", error);
-    }
-});
-
-export default router;
+      }
+      res.json({ status: stored ? 'recorded' : 'duplicate', execution: 'not-requested' });
+    } catch (error) { res.status(error.status || 503).json({ error: safeMessage(error) }); }
+  });
+  return router;
+}
+export default createWebhookRouter();

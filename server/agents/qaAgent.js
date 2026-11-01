@@ -1,28 +1,32 @@
-import { spawnSync } from 'node:child_process';
-import { validateRepositoryPath } from '../services/githubService.js';
+import { parse } from '@babel/parser';
+import { validateRepositoryPath } from '../utils/repositorySafety.js';
+import { containsCredential } from '../utils/security.js';
 
 export async function qaAgent({ changes }) {
   const checks = [];
-  let failed = false;
-  let inconclusive = false;
   for (const file of changes || []) {
-    try { validateRepositoryPath(file.path); } catch (error) { checks.push({ path: file.path, type: 'path-safety', status: 'failed', message: error.message }); failed = true; continue; }
-    if (typeof file.content !== 'string' || !file.content.trim()) { checks.push({ path: file.path, type: 'content', status: 'failed', message: 'File content is empty.' }); failed = true; continue; }
-    if (/\.(json|jsonc)$/i.test(file.path)) {
-      try { JSON.parse(file.content); checks.push({ path: file.path, type: 'json-parse', status: 'passed', message: 'Valid JSON.' }); }
-      catch (error) { checks.push({ path: file.path, type: 'json-parse', status: 'failed', message: error.message }); failed = true; }
-    } else if (/\.(mjs|cjs|js)$/i.test(file.path)) {
-      const result = spawnSync(process.execPath, ['--check', '--input-type=module'], { input: file.content, encoding: 'utf8', timeout: 5_000, maxBuffer: 1_000_000 });
-      if (result.error || result.status !== 0) { checks.push({ path: file.path, type: 'javascript-syntax', status: 'failed', message: result.error?.message || result.stderr.trim().slice(0, 500) }); failed = true; }
-      else checks.push({ path: file.path, type: 'javascript-syntax', status: 'passed', message: 'Node.js syntax check passed.' });
-    } else if (/\.(jsx|tsx)$/i.test(file.path)) {
-      checks.push({ path: file.path, type: 'source-review', status: 'inconclusive', message: 'JSX/TSX requires the repository build tool; this remote patch was not applied to a test checkout.' }); inconclusive = true;
-    } else {
-      const suspicious = /-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}/.test(file.content);
-      checks.push({ path: file.path, type: 'static-review', status: suspicious ? 'failed' : 'passed', message: suspicious ? 'Credential-like value detected.' : 'Non-empty content and credential scan passed.' });
-      if (suspicious) failed = true;
+    try {
+      validateRepositoryPath(file.path);
+      if (typeof file.content !== 'string' || !file.content.trim()) throw new Error('File content is empty.');
+      if (containsCredential(file.content)) throw new Error('Credential-like value detected.');
+      if (/\.json$/i.test(file.path)) {
+        JSON.parse(file.content);
+        checks.push({ path: file.path, type: 'json-parse', status: 'passed', message: 'Valid JSON.' });
+      } else if (/\.(mjs|cjs|js|jsx|ts|tsx)$/i.test(file.path)) {
+        const plugins = [];
+        if (/\.(jsx|tsx|js)$/i.test(file.path)) plugins.push('jsx');
+        if (/\.(ts|tsx)$/i.test(file.path)) plugins.push('typescript');
+        parse(file.content, { sourceType: /\.cjs$/i.test(file.path) ? 'commonjs' : /\.mjs$/i.test(file.path) ? 'module' : 'unambiguous', plugins });
+        checks.push({ path: file.path, type: 'javascript-syntax', status: 'passed', message: 'Source syntax parsed; imports, types and runtime behavior are not verified.' });
+      } else if (/\.(md|txt)$/i.test(file.path)) {
+        checks.push({ path: file.path, type: 'text-safety', status: 'passed', message: 'Non-empty text and credential scan passed.' });
+      } else {
+        checks.push({ path: file.path, type: 'source-review', status: 'inconclusive', message: 'This file type requires the target repository validation tools.' });
+      }
+    } catch (error) {
+      checks.push({ path: file.path || '(missing)', type: 'static-validation', status: 'failed', message: error.message.slice(0, 500) });
     }
   }
-  const status = failed ? 'failed' : inconclusive ? 'inconclusive' : 'passed';
-  return { status, passed: status === 'passed', checks, executedTests: [], summary: 'Static checks only. Repository test suites and integration tests were not executed against this uncommitted remote proposal.' };
+  const status = checks.some(check => check.status === 'failed') ? 'failed' : !checks.length || checks.some(check => check.status === 'inconclusive') ? 'inconclusive' : 'passed';
+  return { status, passed: status === 'passed', checks, executedTests: [], summary: 'Static checks only. Target repository tests, builds, import resolution and integration tests have NOT been executed. Required CI must pass before merge/deployment.' };
 }

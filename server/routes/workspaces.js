@@ -6,23 +6,18 @@ import User from "../models/user.js";
 // Create Workspace
 router.post("/", auth, async (req, res) => {
     try {
-        const { name } = req.body;
-        if (!name) return res.status(400).json({ msg: "Workspace name is required" });
+        const { name } = req.body || {};
+        if (typeof name !== "string" || !name.trim() || name.length > 100) return res.status(400).json({ msg: "Workspace name is required" });
 
         const workspace = await Workspace.create({
-            name,
+            name: name.trim(),
             owner: req.user.id,
             members: [req.user.id]
         });
 
         res.json(workspace);
     } catch (err) {
-        console.error("Workspace Creation Error:", err);
-        res.status(500).json({
-            error: "Failed to create workspace",
-            message: err.message,
-            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-        });
+        res.status(err.status || 503).json({ error: "Workspace creation is unavailable." });
     }
 });
 
@@ -43,7 +38,7 @@ router.get("/", auth, async (req, res) => {
         res.json(populatedWorkspaces);
     } catch (err) {
         console.error(err.message);
-        res.status(500).json({ error: "Server Error" });
+        res.status(err.status || 503).json({ error: "Workspaces are unavailable." });
     }
 });
 

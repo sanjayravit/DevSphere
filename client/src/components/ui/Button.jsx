@@ -7,7 +7,7 @@ export function cn(...inputs) {
     return twMerge(clsx(inputs));
 }
 
-export const Button = React.forwardRef(({ className, variant = 'primary', size = 'default', isLoading, children, ...props }, ref) => {
+export const Button = React.forwardRef(({ className, variant = 'primary', size = 'default', isLoading, disabled, children, ...props }, ref) => {
 
     const variants = {
         primary: "bg-primary-500 hover:bg-primary-400 text-white shadow-[0_0_15px_rgba(99,102,241,0.5)] hover:shadow-[0_0_20px_rgba(99,102,241,0.7)]",
@@ -34,7 +34,7 @@ export const Button = React.forwardRef(({ className, variant = 'primary', size =
                 sizes[size],
                 className
             )}
-            disabled={isLoading || props.disabled}
+            disabled={Boolean(isLoading || disabled)}
             {...props}
         >
             {isLoading ? (

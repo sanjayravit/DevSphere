@@ -1,217 +1,127 @@
-import express from "express";
-const router = express.Router();
-import User from "../models/user.js";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import auth from "../middleware/auth.js";
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import axios from 'axios';
-import firebaseAdmin from "../firebaseAdmin.js";
-// Common DB check middleware
-const checkDb = (req, res, next) => {
-  if (!firebaseAdmin.db) {
-    return res.status(503).json({
-      error: "Service Unavailable",
-      details: "Database is not initialized. Please try again in a few seconds or check server logs."
-    });
-  }
-  next();
+import User from '../models/user.js';
+import auth from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
+import { getSessionSecret, signSession } from '../config/session.js';
+import firebaseAdmin from '../firebaseAdmin.js';
+
+const router = express.Router();
+const checkDb = (_req, res, next) => {
+  if (!firebaseAdmin.db) return res.status(503).json({ error: 'Database is not configured.' });
+  try { getSessionSecret(); next(); } catch { return res.status(503).json({ error: 'Session signing is not configured.' }); }
 };
-
-// Register
-router.post("/register", checkDb, async (req, res) => {
+const validEmail = email => typeof email === 'string' && email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const validPassword = password => typeof password === 'string' && Buffer.byteLength(password) >= 8 && Buffer.byteLength(password) <= 72;
+export const publicUser = (user, includeEmail = true) => Object.fromEntries(Object.entries({ id: user.id, username: user.username || '', name: user.name || '', avatar: user.avatar || '', ...(includeEmail ? { email: user.email || '' } : {}) }));
+router.post('/register', rateLimit({ limit: 10, windowMs: 15 * 60_000 }), async (req, res, next) => {
+  const { email, password, username, name } = req.body || {};
+  const label = username || name;
+  if (!validEmail(email) || !validPassword(password) || typeof label !== 'string' || !label.trim() || label.length > 80) return res.status(400).json({ error: 'Provide a valid email, name and password (8–72 UTF-8 bytes).' });
+  next();
+}, checkDb, async (req, res) => {
   try {
-    const { email, password, username, name } = req.body;
-
-    // Check for existing user
-    const existing = await User.findByEmail(email);
-    if (existing) {
-      return res.status(409).json({ error: "An account with this email already exists.", code: "DUPLICATE_EMAIL" });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-
-    const user = await User.create({
-      username: username || name,
-      email: email,
-      password: hashed
-    });
-
-    const payload = { user: { id: user.id } };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' });
-    res.json({ token });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Registration failed. Please try again.", details: err.message, code: "REGISTRATION_ERROR" });
-  }
+    const email = req.body.email.trim().toLowerCase();
+    if (await User.findByEmail(email)) return res.status(409).json({ error: 'An account with this email already exists.', code: 'DUPLICATE_EMAIL' });
+    const user = await User.create({ username: (req.body.username || req.body.name).trim(), email, password: await bcrypt.hash(req.body.password, 12), authProvider: 'password' });
+    res.json({ token: signSession(user.id) });
+  } catch (error) { res.status(error.code === 'DUPLICATE_EMAIL' ? 409 : 503).json({ error: error.code === 'DUPLICATE_EMAIL' ? 'An account with this email already exists.' : 'Registration is temporarily unavailable.' }); }
 });
-
-// Login
-router.post("/login", checkDb, async (req, res) => {
+router.post('/login', rateLimit({ limit: 20, windowMs: 60_000 }), async (req, res, next) => {
+  if (!validEmail(req.body?.email) || typeof req.body?.password !== 'string' || Buffer.byteLength(req.body.password) > 72) return res.status(400).json({ error: 'A valid email and password are required.' });
+  next();
+}, checkDb, async (req, res) => {
   try {
-    const user = await User.findByEmail(req.body.email);
-
-    if (!user) return res.status(404).json({ error: "No account found with this email.", code: "USER_NOT_FOUND" });
-
-    const valid = await bcrypt.compare(req.body.password, user.password);
-    if (!valid) return res.status(401).json({ error: "Incorrect password. Please try again.", code: "WRONG_PASSWORD" });
-
-    const payload = { user: { id: user.id } };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' });
-    res.json({ token });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Authentication failed. Please try again later.", details: err.message, code: "SERVER_ERROR" });
-  }
+    const user = await User.findByEmail(req.body.email.trim().toLowerCase());
+    if (!user?.password?.startsWith('$2') || !await bcrypt.compare(req.body.password, user.password)) return res.status(401).json({ error: 'Incorrect email or password.', code: 'INVALID_CREDENTIALS' });
+    res.json({ token: signSession(user.id) });
+  } catch { res.status(503).json({ error: 'Authentication is temporarily unavailable.' }); }
 });
-
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    delete user.password;
-    res.json(user);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: 'Server Error' });
-  }
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    res.json(publicUser(user));
+  } catch { res.status(503).json({ error: 'User information is temporarily unavailable.' }); }
 });
 
-// @route   GET /api/auth/github
-// @desc    Initiate GitHub OAuth
-// @access  Public
-router.get('/github', (req, res) => {
-  const client_id = process.env.GITHUB_CLIENT_ID;
-  const redirect_uri = process.env.GITHUB_REDIRECT_URI || 'http://localhost:5000/api/auth/github/callback';
-  res.redirect(`https://github.com/login/oauth/authorize?client_id=${client_id}&redirect_uri=${redirect_uri}&scope=user:email`);
+function frontendUrl() {
+  const url = new URL(process.env.CLIENT_URL || 'https://devsphere-sj.vercel.app');
+  if (url.protocol !== 'https:' && !(process.env.NODE_ENV !== 'production' && url.hostname === 'localhost')) throw new Error('Invalid CLIENT_URL.');
+  return url.origin;
+}
+const validClientState = value => typeof value === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(value);
+router.get('/providers', rateLimit({ limit: 60 }), (_req, res) => {
+  let configured = false;
+  try { getSessionSecret(); configured = Boolean(firebaseAdmin.db && process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && process.env.GITHUB_REDIRECT_URI); } catch { /* unavailable */ }
+  res.json({ githubOAuth: configured });
 });
-
-// @route   GET /api/auth/github/callback
-// @desc    GitHub OAuth callback
-// @access  Public
-router.get('/github/callback', async (req, res) => {
-  const { code } = req.query;
-  const frontendUrl = req.headers.origin || "https://devsphere-sj.vercel.app";
-
-  if (!code) {
-    return res.redirect(`${frontendUrl}/login?error=oauth_no_code`);
-  }
-
+const clearState = res => res.setHeader('Set-Cookie', 'devsphere_oauth_state=; HttpOnly; SameSite=Lax; Path=/api/auth/github; Max-Age=0');
+router.get('/github', rateLimit(), (req, res) => {
+  if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET || !process.env.GITHUB_REDIRECT_URI) return res.status(503).json({ error: 'GitHub OAuth is not configured.' });
   try {
-    const tokenRes = await axios.post('https://github.com/login/oauth/access_token', {
-      client_id: process.env.GITHUB_CLIENT_ID,
-      client_secret: process.env.GITHUB_CLIENT_SECRET,
-      code
-    }, {
-      headers: { Accept: 'application/json' }
-    });
-
+    if (!validClientState(req.query.client_state)) return res.status(400).json({ error: 'Start GitHub sign-in from the application login page.' });
+    const state = jwt.sign({ kind: 'github-oauth', clientState: req.query.client_state, nonce: randomBytes(32).toString('hex') }, getSessionSecret(), { algorithm: 'HS256', expiresIn: '10m' });
+    res.setHeader('Set-Cookie', `devsphere_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/api/auth/github; Max-Age=600${process.env.NODE_ENV === 'production' || process.env.VERCEL ? '; Secure' : ''}`);
+    const params = new URLSearchParams({ client_id: process.env.GITHUB_CLIENT_ID, redirect_uri: process.env.GITHUB_REDIRECT_URI, scope: 'user:email', state });
+    res.redirect(`https://github.com/login/oauth/authorize?${params}`);
+  } catch { res.status(503).json({ error: 'OAuth session configuration is unavailable.' }); }
+});
+router.get('/github/callback', rateLimit(), checkDb, async (req, res) => {
+  let frontend;
+  try { frontend = frontendUrl(); } catch { return res.status(503).json({ error: 'CLIENT_URL is invalid.' }); }
+  const cookie = (req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('devsphere_oauth_state='))?.slice('devsphere_oauth_state='.length);
+  const { code, state } = req.query;
+  clearState(res);
+  try {
+    if (typeof code !== 'string' || code.length > 1_000 || typeof state !== 'string' || !cookie || cookie.length !== state.length || !timingSafeEqual(Buffer.from(cookie), Buffer.from(state))) throw new Error('Invalid OAuth state.');
+    const verifiedState = jwt.verify(state, getSessionSecret(), { algorithms: ['HS256'] });
+    if (verifiedState.kind !== 'github-oauth' || !validClientState(verifiedState.clientState)) throw new Error('Invalid OAuth client state.');
+    const config = { headers: { Accept: 'application/json' }, timeout: 15_000, maxContentLength: 500_000, maxRedirects: 0 };
+    const tokenRes = await axios.post('https://github.com/login/oauth/access_token', { client_id: process.env.GITHUB_CLIENT_ID, client_secret: process.env.GITHUB_CLIENT_SECRET, redirect_uri: process.env.GITHUB_REDIRECT_URI, code }, config);
     const accessToken = tokenRes.data.access_token;
-    if (!accessToken) throw new Error("No access token provided from GitHub.");
-
-    const userRes = await axios.get('https://api.github.com/user', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-
-    const emailsRes = await axios.get('https://api.github.com/user/emails', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-
-    const primaryEmailObj = emailsRes.data.find(e => e.primary) || emailsRes.data[0];
-    if (!primaryEmailObj) throw new Error("No email found on GitHub account.");
-
-    const primaryEmail = primaryEmailObj.email;
-    const userData = userRes.data;
-
-    // Check DB for matching email
-    let user = await User.findByEmail(primaryEmail);
-    if (!user) {
-      user = await User.create({
-        username: userData.login,
-        name: userData.name || userData.login,
-        email: primaryEmail,
-        avatar: userData.avatar_url,
-        password: 'github_oauth_dummy_' + Date.now() + Math.random(),
-      });
-    } else {
-      // Update avatar if it changed
-      await User.update(user.id, {
-        avatar: userData.avatar_url,
-        username: user.username || userData.login
-      });
-    }
-
-    const payload = { user: { id: user.id } };
-    jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' }, (err, token) => {
-      if (err) throw err;
-      const frontendUrl = req.headers.origin || "https://devsphere-sj.vercel.app";
-      res.redirect(`${frontendUrl}/login?token=${token}`);
-    });
-
-  } catch (err) {
-    console.error("OAuth Error:", err.message);
-    const frontendUrl = req.headers.origin || "https://devsphere-sj.vercel.app";
-    res.redirect(`${frontendUrl}/login?error=oauth_failed`);
-  }
+    if (typeof accessToken !== 'string') throw new Error('No OAuth access token.');
+    config.headers.Authorization = `Bearer ${accessToken}`;
+    const [userRes, emailsRes] = await Promise.all([axios.get('https://api.github.com/user', config), axios.get('https://api.github.com/user/emails', config)]);
+    const email = emailsRes.data.find(item => item.verified && item.primary)?.email;
+    if (!validEmail(email) || !Number.isInteger(userRes.data.id) || typeof userRes.data.login !== 'string') throw new Error('No verified GitHub identity.');
+    let user = await User.findByEmail(email.toLowerCase());
+    if (user && user.githubId !== String(userRes.data.id)) throw new Error('Existing accounts must be authenticated before linking another provider.');
+    if (!user) user = await User.create({ username: userRes.data.login, name: userRes.data.name || userRes.data.login, email: email.toLowerCase(), avatar: userRes.data.avatar_url || '', githubId: String(userRes.data.id), authProvider: 'github' });
+    else await User.update(user.id, { githubId: String(userRes.data.id), avatar: userRes.data.avatar_url || user.avatar || '' });
+    // Fragments are not sent to servers or leaked as HTTP referrers. The client
+    // immediately removes this value and validates it with /auth/me.
+    res.redirect(`${frontend}/login#token=${encodeURIComponent(signSession(user.id))}&state=${encodeURIComponent(verifiedState.clientState)}`);
+  } catch { res.redirect(`${frontend}/login?error=oauth_failed`); }
 });
 
-
-// Firebase Auth Sync
-router.post("/user", async (req, res) => {
+router.post('/user', rateLimit({ limit: 60 }), async (req, res) => {
+  if (typeof req.body?.idToken !== 'string' || !req.body.idToken || req.body.idToken.length > 8_192) return res.status(400).json({ error: 'A valid idToken is required.' });
+  if (!firebaseAdmin.admin.apps.length || !firebaseAdmin.db) return res.status(503).json({ error: 'Firebase Admin is not configured.' });
+  try { getSessionSecret(); } catch { return res.status(503).json({ error: 'Session signing is not configured.' }); }
   try {
-    if (!firebaseAdmin.admin.apps.length) {
-      return res.status(503).json({
-        error: "Server configuration missing",
-        details: "Firebase Admin is not initialized. Please check Vercel environment variables."
-      });
-    }
-    const { idToken } = req.body;
-    if (!idToken) return res.status(400).json({ error: "idToken is required" });
-
-    const decodedToken = await firebaseAdmin.admin.auth().verifyIdToken(idToken);
-    const { uid, email, name, picture } = decodedToken;
-
+    const decoded = await firebaseAdmin.admin.auth().verifyIdToken(req.body.idToken, true);
+    if (typeof decoded.uid !== 'string' || !validEmail(decoded.email)) return res.status(400).json({ error: 'This sign-in method must provide an email address.' });
+    const { uid, email, name, picture } = decoded;
     let user = await User.findById(uid);
     if (!user) {
-      // Create user if not exists, use uid as document ID
-      const col = firebaseAdmin.db.collection("users");
-      await col.doc(uid).set({
-        username: name || email.split('@')[0],
-        email: email,
-        name: name || '',
-        avatar: picture || '',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-      user = { id: uid, email, name };
+      const profile = { username: String(name || req.body.name || email.split('@')[0]).slice(0, 80), email, name: String(name || req.body.name || '').slice(0, 100), avatar: picture || '', authProvider: 'firebase', createdAt: new Date(), updatedAt: new Date() };
+      // create() prevents a concurrent sign-in from overwriting an existing profile.
+      try { await firebaseAdmin.db.collection('users').doc(uid).create(profile); }
+      catch (error) { if (error.code !== 6 && error.code !== 'already-exists') throw error; }
+      user = await User.findById(uid);
     }
-
-    const payload = { user: { id: uid } };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || "fallback_dev_secret", { expiresIn: '5h' });
-    res.json({ token, user });
-  } catch (err) {
-    console.error("Firebase Sync Error:", err.message);
-
-    // If the error came from verifying the token (Auth)
-    if (err.code && err.code.startsWith('auth/')) {
-      return res.status(401).json({
-        error: "Invalid Firebase token",
-        details: err.message,
-        code: err.code
-      });
+    if (!user.name && (name || typeof req.body.name === 'string')) {
+      const displayName = String(name || req.body.name).slice(0, 100);
+      await User.update(uid, { name: displayName, username: displayName });
+      user = { ...user, name: displayName, username: displayName };
     }
-
-    // If the error came from Firestore (like PERMISSION_DENIED)
-    if (err.message && err.message.includes("PERMISSION_DENIED")) {
-      return res.status(500).json({ error: "Database Error", details: "Firestore Database has not been created or lacks permissions." });
-    }
-
-    // Generic server error
-    res.status(500).json({
-      error: "Internal Server Error during sync",
-      details: err.message,
-      stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
-    });
+    res.json({ token: signSession(uid), user: publicUser(user) });
+  } catch (error) {
+    res.status(error.code?.startsWith('auth/') ? 401 : 503).json({ error: error.code?.startsWith('auth/') ? 'Invalid, expired or revoked Firebase token.' : 'Authentication synchronization is temporarily unavailable.' });
   }
 });
-
 export default router;

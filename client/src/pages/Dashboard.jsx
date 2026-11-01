@@ -13,29 +13,32 @@ export const Dashboard = () => {
     const { activeWorkspace, projects, loading } = useWorkspace();
     const navigate = useNavigate();
     const [analytics, setAnalytics] = useState(null);
+    const [analyticsError, setAnalyticsError] = useState('');
 
     useEffect(() => {
+        let valid = true; setAnalytics(null); setAnalyticsError('');
         const fetchAnalytics = async () => {
             try {
                 const res = await api.get('/analytics');
-                setAnalytics(res.data);
+                if (valid) setAnalytics(res.data);
             } catch (err) {
-                console.error("Dashboard Analytics Error", err);
+                if (valid) setAnalyticsError('Analytics could not be retrieved. No metrics have been inferred.');
             }
         };
         fetchAnalytics();
-    }, [activeWorkspace]);
+        return () => { valid = false; };
+    }, [activeWorkspace, user?.id]);
 
     const stats = analytics?.stats || {
-        codeQuality: 0, totalProjects: 0, linesOfCode: 0,
-        aiGenerations: 0, marketplaceInstalls: 0, bugFrequencyRating: 0
+        codeQuality: null, totalProjects: null, linesOfCode: null,
+        aiGenerations: null, marketplaceInstalls: null, bugFrequencyRating: null
     };
 
     const STATS_DATA = [
-        { label: 'Code Quality', value: `${stats.codeQuality}%`, icon: HeartPulse, color: 'text-green-400' },
-        { label: 'Lines of Code', value: stats.linesOfCode, icon: Code2, color: 'text-primary-500' },
-        { label: 'Bug Frequency', value: `${stats.bugFrequencyRating}%`, icon: Bug, color: 'text-red-400' },
-        { label: 'AI Assistance', value: stats.aiGenerations, icon: Sparkles, color: 'text-accent-purple' },
+        { label: 'Code Quality', value: stats.codeQuality == null ? 'Not measured' : `${stats.codeQuality}%`, icon: HeartPulse, color: 'text-green-400' },
+        { label: 'Lines of Code', value: stats.linesOfCode ?? 'Unavailable', icon: Code2, color: 'text-primary-500' },
+        { label: 'Bug Frequency', value: stats.bugFrequencyRating == null ? 'Not measured' : `${stats.bugFrequencyRating}%`, icon: Bug, color: 'text-red-400' },
+        { label: 'AI Assistance', value: stats.aiGenerations ?? 'Unavailable', icon: Sparkles, color: 'text-accent-purple' },
     ];
 
     return (
@@ -52,6 +55,8 @@ export const Dashboard = () => {
                 </div>
             </div>
 
+            {analyticsError && <div role="alert" className="rounded-xl border border-amber-500/30 p-3 text-amber-300">{analyticsError}</div>}
+            {analytics?.measurementNotes && <p className="text-xs text-gray-500">{analytics.measurementNotes}</p>}
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {STATS_DATA.map((stat, i) => (
@@ -134,7 +139,7 @@ export const Dashboard = () => {
                                 <h3 className="text-gray-200 font-medium group-hover:text-white transition-colors">{p.name}</h3>
                                 <p className="text-xs text-gray-500 mt-1 flex items-center gap-2 group-hover:text-accent-purple/70 transition-colors">
                                     <span className="w-2 h-2 rounded-full bg-accent-purple/50"></span>
-                                    {p.files?.length || 1} file(s)
+                                    {p.fileCount ?? p.files?.length ?? 0} file(s)
                                 </p>
                             </motion.div>
                         ))}

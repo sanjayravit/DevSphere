@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import jwt from 'jsonwebtoken';
 import { evaluateDecision } from '../engines/decisionEngine.js';
 import { qaAgent } from '../agents/qaAgent.js';
 import { createRunDevSphere, proposalHash } from '../engines/orchestrator.js';
 import { validateRepositoryPath, getDefaultBranch, createBranch, commitChanges } from '../services/githubService.js';
 import { configureFirestore, claimRunApproval, createRun, getRun } from '../services/firebaseService.js';
 import auth from '../middleware/auth.js';
+import { signSession } from '../config/session.js';
+import { fakeFirestore } from './helpers/firestore.js';
+import { mockProviders, baseSha, blobSha } from './helpers/providers.js';
 
 const passed = { status: 'passed', checks: [] };
 const repositoryInfo = { default_branch: 'trunk', full_name: 'example/project', html_url: 'https://github.com/example/project' };
@@ -47,49 +49,28 @@ test('GitHub integration detects the configured repository default branch dynami
 });
 
 test('GitHub branch and Contents APIs create and update files with Base64 and blob SHA', async t => {
-  const oldFetch = globalThis.fetch; const oldRepo = process.env.GITHUB_REPOSITORY; const oldToken = process.env.GITHUB_TOKEN;
-  process.env.GITHUB_REPOSITORY = 'example/project'; process.env.GITHUB_TOKEN = 'test-token';
-  const calls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    calls.push({ url: String(url), method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null });
-    const u = String(url);
-    if (u.endsWith('/repos/example/project')) return new Response(JSON.stringify(repositoryInfo), { status: 200 });
-    if (u.includes('/git/ref/heads/trunk')) return new Response(JSON.stringify({ object: { sha: 'base-sha' } }), { status: 200 });
-    if (u.endsWith('/git/refs')) return new Response(JSON.stringify({ ref: 'refs/heads/devsphere/test' }), { status: 201 });
-    if (u.includes('/contents/src/new.js?ref=')) return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
-    if (u.includes('/contents/src/existing.js?ref=')) return new Response(JSON.stringify({ sha: 'blob-sha-current', encoding: 'base64', content: Buffer.from('old').toString('base64') }), { status: 200 });
-    if (u.includes('/contents/src/new.js') && options.method === 'PUT') return new Response(JSON.stringify({ commit: { sha: 'new-file-commit', html_url: 'https://github.com/example/project/commit/new-file-commit' } }), { status: 201 });
-    if (u.includes('/contents/src/existing.js') && options.method === 'PUT') return new Response(JSON.stringify({ commit: { sha: 'updated-file-commit', html_url: 'https://github.com/example/project/commit/updated-file-commit' } }), { status: 200 });
-    return new Response(JSON.stringify({ message: `Unexpected test URL ${u}` }), { status: 500 });
-  };
-  restoreEnvironment(t, oldFetch, oldRepo, oldToken);
+  const fixture = mockProviders(t, { files: { 'src/existing.js': 'old' } });
   const branch = await createBranch(undefined, 'devsphere/test');
-  assert.equal(branch.base, 'trunk'); assert.equal(branch.baseSha, 'base-sha');
+  assert.equal(branch.base, 'trunk'); assert.equal(branch.baseSha, baseSha);
   const changes = [
     { path: 'src/new.js', operation: 'create', content: 'export const x = "é";', expectedSha: null },
-    { path: 'src/existing.js', operation: 'update', content: 'export const old = false;', expectedSha: 'blob-sha-current' }
+    { path: 'src/existing.js', operation: 'update', content: 'export const old = false;', expectedSha: blobSha('old') }
   ];
   const commit = await commitChanges(undefined, 'devsphere/test', changes);
-  const puts = calls.filter(call => call.method === 'PUT');
+  const puts = fixture.calls.filter(call => call.method === 'PUT');
   assert.equal(puts.length, 2);
   assert.equal(Buffer.from(puts[0].body.content, 'base64').toString('utf8'), changes[0].content);
   assert.equal(puts[0].body.sha, undefined);
-  assert.equal(puts[1].body.sha, 'blob-sha-current');
-  assert.equal(commit.commitSha, 'updated-file-commit');
+  assert.equal(puts[1].body.sha, blobSha('old'));
+  assert.equal(commit.commitSha, fixture.branches.get('devsphere/test'));
+  assert.equal(fixture.branches.get('trunk'), baseSha);
 });
 
 test('GitHub updates fail closed when the proposed blob SHA is stale', async t => {
-  const oldFetch = globalThis.fetch; const oldRepo = process.env.GITHUB_REPOSITORY; const oldToken = process.env.GITHUB_TOKEN;
-  process.env.GITHUB_REPOSITORY = 'example/project'; process.env.GITHUB_TOKEN = 'test-token';
-  const calls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    calls.push({ url: String(url), method: options.method || 'GET' });
-    if (String(url).endsWith('/repos/example/project')) return new Response(JSON.stringify(repositoryInfo), { status: 200 });
-    return new Response(JSON.stringify({ sha: 'newer-blob-sha' }), { status: 200 });
-  };
-  restoreEnvironment(t, oldFetch, oldRepo, oldToken);
+  const fixture = mockProviders(t, { files: { 'src/changed.js': 'newer' } });
+  fixture.branches.set('devsphere/test', baseSha);
   await assert.rejects(commitChanges(undefined, 'devsphere/test', [{ path: 'src/changed.js', operation: 'update', content: 'new content', expectedSha: 'stale-blob-sha' }]), error => error.code === 'GITHUB_CONFLICT');
-  assert.equal(calls.some(call => call.method === 'PUT'), false);
+  assert.equal(fixture.calls.some(call => call.method === 'PUT'), false);
 });
 
 test('QA reports malformed JSON and JavaScript syntax as failures', async () => {
@@ -106,28 +87,18 @@ test('authentication middleware rejects missing tokens and accepts valid identit
     auth(req, res, () => resolve({ user: req.user }));
   });
   assert.equal((await invoke(undefined)).status, 401);
-  const token = jwt.sign({ user: { id: 'person-1' } }, process.env.JWT_SECRET || 'fallback_dev_secret');
+  const token = signSession('person-1');
   assert.deepEqual(await invoke(`Bearer ${token}`), { user: { id: 'person-1' } });
 });
-
-function fakeFirestore() {
-  const records = new Map();
-  const collection = name => ({ doc: id => ({
-    async create(data) { if (records.has(`${name}/${id}`)) throw new Error('already exists'); records.set(`${name}/${id}`, structuredClone(data)); },
-    async get() { const value = records.get(`${name}/${id}`); return { exists: Boolean(value), id, data: () => structuredClone(value) }; },
-    async set(data, options) { const key = `${name}/${id}`; records.set(key, options?.merge ? { ...(records.get(key) || {}), ...structuredClone(data) } : structuredClone(data)); },
-    async update(data) { records.set(`${name}/${id}`, { ...records.get(`${name}/${id}`), ...structuredClone(data) }); }
-  }) });
-  return { collection, async runTransaction(callback) { return callback({ async get(ref) { return ref.get(); }, update(ref, data) { ref.update(data); } }); } };
-}
 
 test('Firestore approval claim is owner-scoped, exact-hash-bound, and single-use', async () => {
   const store = fakeFirestore(); configureFirestore(store);
   try {
     const changes = [{ path: 'src/a.js', operation: 'create', content: 'export const a = 1;', expectedSha: null }];
-    const hash = proposalHash(changes);
-    assert.equal(hash, proposalHash([{ expectedSha: null, content: 'export const a = 1;', operation: 'create', path: 'src/a.js' }]));
-    await createRun('run-1', { userId: 'user-a', status: 'pending_approval', approval: 'pending', approvalHash: hash, proposal: { changes } });
+    const proposal = { changes, repository: 'example/project', baseSha };
+    const hash = proposalHash(proposal);
+    assert.equal(proposalHash(changes), proposalHash([{ expectedSha: null, content: 'export const a = 1;', operation: 'create', path: 'src/a.js' }]));
+    await createRun('run-1', { userId: 'user-a', status: 'pending_approval', approval: 'pending', approvalHash: hash, proposal, qa: { status: 'passed' }, decision: { decision: 'ask' } });
     assert.equal(await claimRunApproval('run-1', 'user-b', hash), null);
     assert.equal(await claimRunApproval('run-1', 'user-a', '0'.repeat(64)), null);
     const claimed = await claimRunApproval('run-1', 'user-a', hash);

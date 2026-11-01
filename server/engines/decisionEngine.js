@@ -18,6 +18,10 @@ export function evaluateDecision({ confidence, risk, impact = 'file', mode, qa }
     decision = 'suggest'; reason = 'QA has not passed; execution is not permitted.';
   } else if (mode === 'manual') {
     decision = 'suggest'; reason = 'Manual mode never executes changes.';
+  } else if (risk === 'high' && confidence < 40) {
+    decision = 'block'; reason = 'Low-confidence high-risk changes are blocked in every execution mode.';
+  } else if (impact === 'system') {
+    decision = confidence < 40 ? 'block' : 'ask'; reason = confidence < 40 ? 'Low-confidence system-wide changes are blocked.' : 'System-wide changes always require explicit approval.';
   } else if (mode === 'approval') {
     decision = 'ask'; reason = 'Approval mode requires explicit approval for every change.';
   } else if (risk === 'high') {
