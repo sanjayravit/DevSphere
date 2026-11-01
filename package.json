@@ -9,7 +9,9 @@
     "start": "node server/server.js",
     "lint": "eslint . --fix",
     "test:server": "node --test server/test/*.test.js",
-    "check:server": "node scripts/check-server.mjs"
+    "check:server": "node scripts/check-server.mjs",
+    "verify:preflight": "node scripts/integration/verify.mjs",
+    "verify:staging": "node scripts/integration/verify.mjs --live"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.43",
