@@ -1,3 +1,4 @@
+import { mockSandboxRun } from './helpers/qa.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -17,7 +18,7 @@ async function deploymentWorkflow(t, configuration = {}) {
   const providers = mockProviders(t, configuration);
   environment(t, { VERCEL_API_TOKEN: 'test-only-vercel-credential', VERCEL_PROJECT_ID: 'prj_test', VERCEL_GITHUB_REPO_ID: '12345', ENABLE_PRODUCTION_DEPLOYMENTS: 'true' });
   const database = fakeFirestore(); configureFirestore(database);
-  const app = express(); app.use(express.json()); app.use('/v2', createV2Router(configuration.routes));
+  const app = express(); app.use(express.json()); app.use('/v2', createV2Router({ runDevSphere: mockSandboxRun, ...configuration.routes }));
   const server = http.createServer(app); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); configureFirestore(null); });
   const post = async (path, body, user = 'user-a') => {

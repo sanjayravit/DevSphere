@@ -237,3 +237,26 @@ export async function getRequiredChecks(repo, sha, branch, options = {}) {
   return { required: definitions.map(check => check.name), checks, passed: checks.every(check => check.conclusion === 'success'), configured: true };
 }
 export default { getDefaultBranch, getBranchHead, createBranch, createUniqueBranch, commitChanges, createPullRequest, getRepositoryInfo, getRepositoryContext, validateRepositoryPath, getPullRequest, getRequiredChecks };
+
+// Complete, immutable, bounded text snapshot for the isolated QA runner. Secret
+// paths are excluded; symlinks/submodules/binary or oversized sources fail closed.
+export async function getQASnapshot(repo, sha, options = {}) {
+  if (!isSha(sha)) throw invalid();
+  const { snapshotPath, validateSnapshot } = await import('./qa/policy.js');
+  const info = await getRepositoryInfo(repo, options);
+  const tree = await getTree(info, sha, options);
+  const files = []; let bytes = 0;
+  for (const entry of tree) {
+    if (entry.type === 'tree') continue;
+    try { snapshotPath(entry.path); } catch { continue; }
+    if (entry.type !== 'blob' || !['100644', '100755'].includes(entry.mode) || entry.size > 500_000 || files.length >= 500 || bytes + entry.size > 1_500_000) throw new ServiceError('QA snapshot is unsupported or exceeds limits.', { code: 'unsupported' });
+    const file = await getFile(info, entry.path, sha, options);
+    if (file?.encoding !== 'base64' || typeof file.content !== 'string') throw invalid();
+    const buffer = Buffer.from(file.content.replace(/\s/g, ''), 'base64');
+    if (gitBlobSha(buffer) !== entry.sha || buffer.includes(0)) throw invalid();
+    const content = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    if (containsCredential(content)) throw new Error('QA snapshot contains credential-like content.');
+    files.push({ path: entry.path, content }); bytes += buffer.length;
+  }
+  return validateSnapshot(files);
+}

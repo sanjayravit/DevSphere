@@ -1,3 +1,4 @@
+import { mockSandboxRun } from './helpers/qa.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -14,7 +15,7 @@ const { createApp } = await import('../server.js');
 async function workflow(t, configuration = {}, overrides = {}) {
   const providers = mockProviders(t, configuration);
   const firestore = fakeFirestore(); configureFirestore(firestore);
-  const server = http.createServer(createApp({ v2: createV2Router(overrides) }));
+  const server = http.createServer(createApp({ v2: createV2Router({ runDevSphere: mockSandboxRun, ...overrides }) }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); configureFirestore(null); });
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -32,7 +33,8 @@ test('WORKFLOW 1 / Manual: HTTP intent → OpenAI → pinned context → plan �
   const result = await app.start('manual');
   assert.equal(result.status, 200); assert.equal(result.body.status, 'suggested');
   assert.equal(result.body.decision.decision, 'suggest'); assert.equal(result.body.qa.status, 'passed');
-  assert.deepEqual(result.body.qa.executedTests, []);
+  assert.equal(result.body.qa.execution.kind, 'mock-sandbox');
+  assert.equal(result.body.qa.executedTests[0].exitCode, 0);
   assert.equal(app.providers.aiCalls.length, 3); assert.equal(app.mutations().length, 0);
   const stored = (await app.request(`/runs/${result.body.runId}`)).body.run;
   assert.ok(stored.intent.acceptanceCriteria.length); assert.ok(stored.plan.tasks.length);

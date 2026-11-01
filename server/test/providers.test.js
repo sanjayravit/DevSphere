@@ -113,8 +113,8 @@ test('QA never treats an empty proposal or unchecked source type as passed, and 
   assert.equal((await qaAgent({ changes: [] })).status, 'inconclusive');
   assert.equal((await qaAgent({ changes: [{ path: 'x.py', content: 'this is not Python' }] })).status, 'inconclusive');
   assert.equal((await qaAgent({ changes: [{ path: 'x.js', content: `const key = "${'sk-' + 'x'.repeat(30)}";` }] })).status, 'failed');
-  assert.equal((await qaAgent({ changes: [{ path: 'x.tsx', content: 'export const X = () => <div>Hello</div>;' }] })).status, 'passed');
-  assert.equal((await qaAgent({ changes: [{ path: 'x.cjs', content: 'module.exports = 1;' }] })).status, 'passed');
+  assert.equal((await qaAgent({ changes: [{ path: 'x.tsx', content: 'export const X = () => <div>Hello</div>;' }] })).status, 'inconclusive');
+  assert.equal((await qaAgent({ changes: [{ path: 'x.cjs', content: 'module.exports = 1;' }] })).status, 'inconclusive');
 });
 test('design analysis cannot downgrade planner high risk or system impact, and recognizes auth context files', () => {
   const plan = { risk: 'high', impact: 'system', confidence: 90 };

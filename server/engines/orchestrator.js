@@ -48,7 +48,7 @@ async function executeChanges(context, proposal) {
   await progress(context, 'github-pr', 'running');
   const pr = await context.createPullRequest(proposal.repository, branch.branch, branch.base, {
     title: `DevSphere V2: ${proposal.intent.summary.slice(0, 160)}`,
-    body: `## DevSphere V2 proposal\n\n${proposal.intent.summary}\n\n**Decision:** ${proposal.decision.decision} — ${proposal.decision.reason}\n**Confidence:** ${proposal.confidence}%\n**Risk / impact:** ${proposal.risk} / ${proposal.impact}\n**QA:** ${proposal.qa.status} (static only; target repository tests have not run)\n\nReview this PR and required CI before merging.`,
+    body: `## DevSphere V2 proposal\n\n${proposal.intent.summary}\n\n**Decision:** ${proposal.decision.decision} — ${proposal.decision.reason}\n**Confidence:** ${proposal.confidence}%\n**Risk / impact:** ${proposal.risk} / ${proposal.impact}\n**QA:** ${proposal.qa.status} — ${proposal.qa.summary}\n\nReview this PR and required CI before merging.`,
     expectedHeadSha: committed.commitSha, expectedBaseSha: branch.baseSha, signal: context.signal
   });
   const urls = { branch: branch.branch, branchUrl: branch.url, commitUrl: committed.commitUrl, pullRequest: pr.url, pullNumber: pr.number, commitSha: committed.commitSha };
@@ -84,7 +84,7 @@ export function createRunDevSphere(overrides = {}) {
       validateChanges(output.changes);
       await progress(context, 'developer', 'completed', { changeCount: output.changes.length, repository: output.repository });
       await progress(context, 'qa', 'running');
-      const qa = await dependencies.qaAgent(output);
+      const qa = await dependencies.qaAgent(output, { signal: context.signal });
       await dependencies.updateRun(runId, owner, { qa });
       await progress(context, 'qa', qa.status, { summary: qa.summary, checkCount: qa.checks.length });
       await progress(context, 'design', 'running');
