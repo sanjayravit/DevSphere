@@ -1,8 +1,7 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { WorkspaceProvider } from './context/WorkspaceContext';
-import { Layout } from './components/layout/Layout';
+const WorkspaceLayout = React.lazy(() => import('./components/layout/WorkspaceLayout'));
 
 // Lazy-loaded Pages
 const LandingPage = React.lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
@@ -21,14 +20,13 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <WorkspaceProvider>
           <Suspense fallback={<div className="h-screen w-screen flex flex-col items-center justify-center bg-dark-900 text-primary-400 gap-4"><div className="w-12 h-12 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div><div className="font-medium tracking-widest text-sm">LOADING DEVPHERE…</div></div>}>
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginSignupPage />} />
 
               {/* Protected Routes using established Layout */}
-              <Route element={<Layout />}>
+              <Route element={<WorkspaceLayout />}>
                 <Route path="/feed" element={<SocialFeedPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/ai-tools" element={<AIToolsPage />} />
@@ -44,7 +42,6 @@ function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
-        </WorkspaceProvider>
       </AuthProvider>
     </BrowserRouter>
   );

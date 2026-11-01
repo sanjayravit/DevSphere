@@ -45,3 +45,14 @@ test('missing scripts and syntax errors fail without running host code', async (
   assert.throws(() => commandPolicy([{ path: 'package.json', content: '{}' }], ['test']), e => e.code === 'missing_dependencies');
   assert.equal((await qaAgent({ changes: [{ path: 'bad.ts', content: 'const = ;' }] })).status, 'failed');
 });
+
+test('remote sandbox requires opt-in HTTPS and explicit cleanup acknowledgement', async t => {
+  const { remoteSandboxProvider } = await import('../services/qa/remoteProvider.js');
+  assert.equal(remoteSandboxProvider({}), null);
+  for (const url of ['http://runner.test', 'https://user:pass@runner.test', 'https://runner.test?token=x']) assert.throws(() => remoteSandboxProvider({ QA_EXECUTION_ENABLED: 'true', QA_RUNNER_URL: url, QA_RUNNER_TOKEN: 'fake' }));
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const provider = remoteSandboxProvider({ QA_EXECUTION_ENABLED: 'true', QA_RUNNER_URL: 'https://runner.test', QA_RUNNER_TOKEN: 'test-only' });
+  globalThis.fetch = async () => new Response(JSON.stringify({ cleaned: false })); await assert.rejects(provider.cleanup('id'), /unconfirmed/);
+  globalThis.fetch = async () => new Response(JSON.stringify({ cleaned: true })); await provider.cleanup('id');
+  globalThis.fetch = async () => new Response('x'.repeat(70_000)); await assert.rejects(provider.execute({ id: 'id' }, {}), /Oversized/);
+});

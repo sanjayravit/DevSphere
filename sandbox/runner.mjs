@@ -32,17 +32,19 @@ async function run(job, controller) {
   const name = `devsphere-qa-${job.id}`;
   const report = { id: job.id, inputHash: job.inputHash, state: 'incomplete', commands: [] };
   try {
-    const start = await docker(['run', '--detach', '--pull=never', '--name', name, '--runtime=runsc', '--network=none', '--read-only', '--user=65532:65532', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=64', '--cpus=1', '--memory=512m', '--memory-swap=512m', '--ulimit=nofile=256:256', '--ulimit=core=0:0', '--tmpfs=/workspace:rw,nosuid,nodev,size=224m,uid=65532,gid=65532', '--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=32m,uid=65532,gid=65532', '--workdir=/workspace', '--env=HOME=/tmp', '--env=npm_config_cache=/opt/npm-cache', '--env=CI=true', '--log-driver=none', image, 'node', '-e', 'setInterval(()=>{},1000)'], { signal });
+    const start = await docker(['run', '--detach', '--pull=never', '--name', name, '--runtime=runsc', '--network=none', '--read-only', '--user=65532:65532', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--pids-limit=64', '--cpus=1', '--memory=512m', '--memory-swap=512m', '--ulimit=nofile=256:256', '--ulimit=core=0:0', '--tmpfs=/workspace:rw,nosuid,nodev,size=224m,uid=65532,gid=65532', '--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=32m,uid=65532,gid=65532', '--workdir=/workspace', '--env=HOME=/tmp', '--env=npm_config_cache=/opt/npm-cache', '--env=CI=true', '--log-driver=none', '--label=devsphere.qa=true', image, 'node', '-e', 'setInterval(()=>{},1000)'], { signal });
     if (start.exitCode) { report.state = 'runner_unavailable'; return report; }
     const loaded = await docker(['exec', '-i', name, 'node', '/opt/qa/load.mjs'], { input: JSON.stringify(job.files), signal });
     if (loaded.exitCode) { report.state = 'resource_limit'; report.resource = 'disk'; return report; }
     for (const command of commands) {
       const at = Date.now();
-      const result = await docker(['exec', name, ...COMMANDS[command.id]], { signal });
+      const result = await docker(['exec', name, ...COMMANDS[command.id]], { signal, capture: true });
       report.commands.push({ id: command.id, exitCode: result.exitCode, durationMs: Date.now() - at, outputBytes: result.outputBytes });
       if (result.exitCode) {
-        report.state = result.exitCode === 137 ? 'resource_limit' : command.id === 'install' ? 'missing_dependencies' : 'failed';
-        if (result.exitCode === 137) report.resource = 'memory';
+        const disk = /ENOSPC|No space left on device/.test(result.output);
+        const processes = /EAGAIN|Resource temporarily unavailable/.test(result.output);
+        report.state = result.exitCode === 137 || disk || processes ? 'resource_limit' : command.id === 'install' ? 'missing_dependencies' : 'failed';
+        if (report.state === 'resource_limit') report.resource = disk ? 'disk' : processes ? 'process' : 'unknown';
         return report;
       }
     }
@@ -58,7 +60,7 @@ http.createServer(async (req, res) => {
   const id = req.url?.match(/^\/jobs\/([a-f0-9-]{36})$/)?.[1];
   if (!id) return reply(404, {});
   if (req.method === 'DELETE') {
-    const current = jobs.get(id); current?.controller.abort();
+    const current = jobs.get(id); current?.controller?.abort();
     jobs.set(id, { ...current, cancelled: true, at: Date.now() });
     try { if (current?.promise) await current.promise.catch(() => {}); await remove(id); return reply(200, { cleaned: true }); }
     catch { return reply(503, { cleaned: false }); }
@@ -71,6 +73,7 @@ http.createServer(async (req, res) => {
   req.setTimeout(5000, () => req.destroy());
   try {
     let body = ''; for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 2_100_000) throw new Error('Oversized job'); }
+    req.setTimeout(0);
     const job = JSON.parse(body); if (job.id !== id || jobs.get(id)?.cancelled) throw new Error('Invalid job');
     // Reserve before awaiting execution. Aborted clients also destroy the sandbox.
     res.on('close', () => { if (!res.writableEnded) entry.controller.abort(); });

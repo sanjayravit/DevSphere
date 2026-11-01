@@ -1,3 +1,4 @@
+import { passedQA } from './helpers/qa.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateDecision } from '../engines/decisionEngine.js';
@@ -10,7 +11,7 @@ import { signSession } from '../config/session.js';
 import { fakeFirestore } from './helpers/firestore.js';
 import { mockProviders, baseSha, blobSha } from './helpers/providers.js';
 
-const passed = { status: 'passed', checks: [] };
+const passed = passedQA;
 const repositoryInfo = { default_branch: 'trunk', full_name: 'example/project', html_url: 'https://github.com/example/project' };
 const restoreEnvironment = (t, oldFetch, oldRepo, oldToken) => t.after(() => {
   globalThis.fetch = oldFetch;
@@ -95,10 +96,10 @@ test('Firestore approval claim is owner-scoped, exact-hash-bound, and single-use
   const store = fakeFirestore(); configureFirestore(store);
   try {
     const changes = [{ path: 'src/a.js', operation: 'create', content: 'export const a = 1;', expectedSha: null }];
-    const proposal = { changes, repository: 'example/project', baseSha };
+    const proposal = { changes, repository: 'example/project', baseSha, qa: passedQA };
     const hash = proposalHash(proposal);
     assert.equal(proposalHash(changes), proposalHash([{ expectedSha: null, content: 'export const a = 1;', operation: 'create', path: 'src/a.js' }]));
-    await createRun('run-1', { userId: 'user-a', status: 'pending_approval', approval: 'pending', approvalHash: hash, proposal, qa: { status: 'passed' }, decision: { decision: 'ask' } });
+    await createRun('run-1', { userId: 'user-a', status: 'pending_approval', approval: 'pending', approvalHash: hash, proposal, qa: passedQA, decision: { decision: 'ask' } });
     assert.equal(await claimRunApproval('run-1', 'user-b', hash), null);
     assert.equal(await claimRunApproval('run-1', 'user-a', '0'.repeat(64)), null);
     const claimed = await claimRunApproval('run-1', 'user-a', hash);

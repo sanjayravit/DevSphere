@@ -49,3 +49,8 @@ test('CI refresh is owner-scoped, transactional, bounded and generation-bound', 
     assert.equal((await recordCheckRefresh('r', 'u', 1, ci)).event, null);
   } finally { configureFirestore(null); }
 });
+
+test('a truncated check page cannot be interpreted as complete success', async t => {
+  fixture(t, (call, s) => call.path.endsWith('/check-runs') ? s.json({ total_count: 2, check_runs: [{ id: 1, head_sha: baseSha, name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'success' }] }) : null);
+  const ci = await getPullRequestChecks('example/project', 1, baseSha); assert.equal(ci.state, 'inaccessible'); assert.equal(ci.passed, false);
+});

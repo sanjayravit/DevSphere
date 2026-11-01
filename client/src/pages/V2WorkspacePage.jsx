@@ -35,19 +35,22 @@ export const V2WorkspacePage = () => {
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
   const session = useAuth();
-  const token = session?.token || localStorage.getItem('token');
+  const token = session?.token;
   const ownerKey = session?.user?.id || token || 'anonymous';
-  const owner = useRef(null); if (owner.current?.key !== ownerKey) owner.current = { key: ownerKey };
+  const owner = useRef(null); if (owner.current?.key !== ownerKey) owner.current = { key: ownerKey, authenticated: Boolean(token) };
   const historyRequest = useRef(0); const detailRequest = useRef(0);
   const activeId = useRef(null);
   const requestId = useRef(null);
   const mounted = useRef(true);
+  const actionGuard = useRef(null); const runGuard = useRef(null);
   const refreshHistory = useCallback(async () => {
+    if (!owner.current.authenticated) return;
     const scope = owner.current; const request = ++historyRequest.current;
     try { const response = await api.get('/v2/runs'); if (mounted.current && scope === owner.current && request === historyRequest.current) setHistory(response.data.runs || []); }
     catch (err) { if (mounted.current && scope === owner.current && request === historyRequest.current) setError(err.response?.data?.error || 'Unable to load DevSphere V2 run history.'); }
   }, []);
   const fetchDetails = useCallback(async id => {
+    if (!owner.current.authenticated) return;
     const scope = owner.current; const request = ++detailRequest.current;
     const response = await api.get(`/v2/runs/${id}`);
     if (mounted.current && scope === owner.current && activeId.current === id && request === detailRequest.current) {
@@ -70,16 +73,18 @@ export const V2WorkspacePage = () => {
   }, [queryRunId, ownerKey, fetchDetails]);
   useEffect(() => {
     if (!token) return undefined;
+    let disposed = false;
     const socket = io(socketOrigin(), { path: '/socket.io', auth: { token }, transports: ['websocket', 'polling'], reconnection: true, timeout: 10_000 });
     const refreshActive = () => {
+      if (disposed) return;
       refreshHistory();
       if (activeId.current) fetchDetails(activeId.current).catch(() => {});
     };
-    socket.on('connect', () => { setConnected(true); refreshActive(); });
-    socket.on('disconnect', () => setConnected(false));
-    socket.on('connect_error', () => setConnected(false));
+    socket.on('connect', () => { if (disposed) return; setConnected(true); refreshActive(); });
+    socket.on('disconnect', () => { if (!disposed) setConnected(false); });
+    socket.on('connect_error', () => { if (!disposed) setConnected(false); });
     socket.on('devsphere:update', event => {
-      if (!event || typeof event.runId !== 'string') return;
+      if (disposed || !event || typeof event.runId !== 'string') return;
       if (requestId.current && event.requestId === requestId.current && !activeId.current) {
         activeId.current = event.runId; setActive({ id: event.runId, status: 'running' });
       }
@@ -88,7 +93,7 @@ export const V2WorkspacePage = () => {
       if (event.status === 'failed') setError(event.detail?.message || 'The run failed. Inspect the recorded history before retrying.');
       if (['decision', 'approval', 'github-pr', 'github-checks', 'orchestrator', 'deployment'].includes(event.step) && event.status !== 'running') refreshActive();
     });
-    return () => { socket.disconnect(); setConnected(false); };
+    return () => { disposed = true; socket.removeAllListeners?.(); socket.disconnect(); setConnected(false); };
   }, [token, refreshHistory, fetchDetails]);
   const selectRun = async item => {
     const scope = owner.current;
@@ -98,8 +103,10 @@ export const V2WorkspacePage = () => {
   };
   const runIntent = async event => {
     event.preventDefault();
+    if (!token || runGuard.current === owner.current) return;
     if (input.trim().length < 8) { setError('Describe the change in at least 8 characters.'); return; }
     setLoading(true); setError(''); setLiveEvents([]); setActive(null); activeId.current = null;
+    runGuard.current = owner.current;
     const correlation = window.crypto.randomUUID(); requestId.current = correlation;
     const scope = owner.current;
     const focused = () => mounted.current && owner.current === scope && requestId.current === correlation;
@@ -119,20 +126,22 @@ export const V2WorkspacePage = () => {
       }
       await refreshHistory(); setError(message);
     } finally {
+      if (runGuard.current === scope) runGuard.current = null;
       if (requestId.current === correlation) requestId.current = null;
       if (mounted.current && owner.current === scope) setLoading(false);
     }
   };
   const act = async (action, body) => {
     const id = activeId.current; const scope = owner.current;
-    if (!id || actionLoading) return;
+    if (!id || !token || actionGuard.current?.scope === scope) return;
+    const guard = { scope, id }; actionGuard.current = guard;
     setActionLoading(true); setError('');
-    try { await api.post(`/v2/runs/${id}/${action}`, body); if (mounted.current && owner.current === scope) { await fetchDetails(id); await refreshHistory(); } }
+    try { await api.post(`/v2/runs/${id}/${action}`, body); if (mounted.current && owner.current === scope) { if (activeId.current === id) await fetchDetails(id); await refreshHistory(); } }
     catch (err) {
       if (!mounted.current || owner.current !== scope) return;
-      await fetchDetails(id).catch(() => {}); await refreshHistory();
+      if (activeId.current === id) await fetchDetails(id).catch(() => {}); await refreshHistory();
       if (mounted.current && activeId.current === id) setError(err.response?.data?.error || 'The action failed or timed out. Inspect the recorded run before retrying.');
-    } finally { if (mounted.current && owner.current === scope) setActionLoading(false); }
+    } finally { if (actionGuard.current === guard) actionGuard.current = null; if (mounted.current && owner.current === scope) setActionLoading(false); }
   };
   const approve = () => active?.approvalHash && act('approve', { approvalHash: active.approvalHash });
   const reject = () => active?.approvalHash && act('reject', { approvalHash: active.approvalHash });
@@ -140,7 +149,8 @@ export const V2WorkspacePage = () => {
 
   const currentEvents = (liveEvents.length ? liveEvents : active?.events || []).filter(event => !active?.id || event.runId === active.id);
   const proposal = active?.proposal;
-  const pending = active?.status === 'pending_approval' && active?.approval === 'pending';
+  const qaPassed = proposal?.qa?.status === 'passed' && proposal?.qa?.execution?.protocol === 'sandbox-v1' && proposal.qa.execution.cleanup === 'confirmed';
+  const pending = active?.status === 'pending_approval' && active?.approval === 'pending' && qaPassed;
 
   return <div className="space-y-6 pb-10 text-slate-300">
     <header className="flex flex-col justify-between gap-5 border-b border-white/[0.07] pb-6 lg:flex-row lg:items-end">
@@ -148,7 +158,8 @@ export const V2WorkspacePage = () => {
       <div className={`inline-flex items-center gap-2 self-start rounded-full border px-3 py-2 text-xs ${connected ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/[0.03] text-slate-400'}`}><span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-slate-500'}`} />{connected ? 'Live updates connected' : 'Live updates offline'}</div>
     </header>
 
-    {error && <div role="alert" className="flex items-start gap-3 rounded-xl border border-rose-400/20 bg-rose-400/[0.08] p-4 text-sm text-rose-200"><CircleAlert size={18} className="mt-0.5 shrink-0" /><span>{error}</span><button onClick={() => setError('')} className="ml-auto text-rose-100"><X size={16} /></button></div>}
+    {!token && <p role="alert" className="text-amber-200">Sign in to access your DevSphere runs.</p>}
+    {error && <div role="alert" className="flex items-start gap-3 rounded-xl border border-rose-400/20 bg-rose-400/[0.08] p-4 text-sm text-rose-200"><CircleAlert size={18} className="mt-0.5 shrink-0" /><span>{error}</span><button aria-label="Dismiss error" onClick={() => setError('')} className="ml-auto text-rose-100"><X size={16} /></button></div>}
 
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,0.7fr)]">
       <Panel title="Start a repository run" icon={Bot}>
@@ -187,12 +198,16 @@ export const V2WorkspacePage = () => {
             <div className="rounded-xl border border-white/[0.06] bg-black/20 p-3 text-xs leading-5 text-slate-400"><b className="text-slate-200">Policy explanation:</b> {proposal.decision?.reason || active.decision?.reason || 'Proposal pending analysis.'}</div>
             {proposal.design?.suggestions?.length > 0 && <ul className="space-y-1 text-xs text-slate-400">{proposal.design.suggestions.map((suggestion, index) => <li key={index}>• {suggestion}</li>)}</ul>}
             <p className="break-all text-[10px] text-slate-500">Repository: {proposal.repository} · Base: {proposal.defaultBranch}@{proposal.baseSha?.slice(0, 12)}{active.approvalHash && <> · Approval hash: <code>{active.approvalHash}</code></>}</p>
+            <p className="text-xs text-slate-500">Confidence is a model estimate, not a calibrated probability of correctness.</p>
             <div className="flex flex-wrap gap-2">
               {pending && <><button disabled={actionLoading} onClick={approve} className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-400 disabled:opacity-50"><Check size={15} />{actionLoading ? 'Processing…' : 'Approve exact proposal'}</button><button disabled={actionLoading} onClick={reject} className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-white/5"><X size={14} />Reject</button></>}
-              {active.pullNumber && ['pull_request', 'deployment_skipped', 'deployment_failed', 'deployment_pending'].includes(active.status) && <button disabled={actionLoading} onClick={requestDeployment} className="inline-flex items-center gap-2 rounded-lg border border-indigo-400/25 bg-indigo-400/10 px-4 py-2.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-400/15"><ArrowUpRight size={15} />{active.status === 'deployment_pending' ? 'Refresh deployment status' : 'Verify merge & deploy'}</button>}
+              {qaPassed && active.pullNumber && ['pull_request', 'deployment_skipped', 'deployment_failed', 'deployment_pending'].includes(active.status) && <button disabled={actionLoading} onClick={requestDeployment} className="inline-flex items-center gap-2 rounded-lg border border-indigo-400/25 bg-indigo-400/10 px-4 py-2.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-400/15"><ArrowUpRight size={15} />{active.status === 'deployment_pending' ? 'Refresh deployment status' : 'Verify merge & deploy'}</button>}
             </div>
           </div> : <p className="text-sm text-slate-500">The orchestrator will populate intent, plan, QA, and decision details as agents complete.</p>}
         </Panel>
+
+        {active.cancelRequested && <p role="status" className="text-sm text-amber-200">Cancellation requested. Wait for acknowledgement; already accepted writes cannot be undone.</p>}
+        {['running', 'executing'].includes(active.status) && <button disabled={actionLoading || active.cancelRequested} onClick={() => act('cancel')} className="rounded-lg border border-amber-300/30 px-4 py-2 text-sm text-amber-200 disabled:opacity-50">Request cancellation</button>}
 
         {proposal?.changes && <Panel title={`Proposed file changes · ${proposal.changes.length}`} icon={GitBranch}>
           <div className="space-y-2">{proposal.changes.map((change, index) => <details key={`${change.path}-${index}`} className="group rounded-xl border border-white/[0.07] bg-black/20">
@@ -201,6 +216,7 @@ export const V2WorkspacePage = () => {
           </details>)}</div>
         </Panel>}
 
+        {(proposal?.qa || active.qa) && <QAEvidence qa={proposal?.qa || active.qa} />}
         {proposal?.qa && <Panel title="QA results" icon={proposal.qa.status === 'passed' ? Check : ShieldAlert} action={<span className={`text-xs font-semibold uppercase ${statusColor(proposal.qa.status)}`}>{proposal.qa.status}</span>}>
           <p className="mb-3 text-xs leading-5 text-slate-400">{proposal.qa.summary}</p><div className="space-y-2">{proposal.qa.checks?.map((check, index) => <div key={`${check.path}-${index}`} className="flex items-start gap-2 rounded-lg bg-black/20 p-2.5 text-xs"><span className={statusColor(check.status)}>{check.status === 'passed' ? '✓' : check.status === 'failed' ? '×' : '!'}</span><div className="min-w-0"><code className="break-all text-slate-200">{check.path}</code><span className="mx-2 text-slate-600">·</span><span className="text-slate-400">{check.type}: {check.message}</span></div></div>)}</div>
           <p className="mt-3 text-[10px] text-slate-500">Repository tests/builds executed: {proposal.qa.executedTests?.length ? proposal.qa.executedTests.map(command => typeof command === 'string' ? command : `${command.argv?.join(' ')} (exit ${command.exitCode})`).join(', ') : 'none (static review only)'}</p>
@@ -228,6 +244,8 @@ export const V2WorkspacePage = () => {
             <DeliveryLink label="Pull request" value={active.pullNumber ? `#${active.pullNumber}` : null} href={active.pullRequest} />
             {active.deployment && <div className="rounded-xl border border-white/[0.06] bg-black/20 p-3"><div className="flex items-center justify-between"><span className="text-slate-500">Deployment</span><b className={statusColor(active.deployment.status)}>{active.deployment.status}</b></div><p className="mt-1 break-words text-slate-300">{active.deployment.url || active.deployment.reason}</p>{active.deployment.url && <a href={active.deployment.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-indigo-300 hover:text-white">Open deployment <ArrowUpRight size={12} /></a>}</div>}
             {!active.branch && !active.pullRequest && !active.deployment && <p className="rounded-xl border border-dashed border-white/10 p-4 text-center text-slate-500">No GitHub execution has been authorized for this proposal.</p>}
+            {(active.executionState === 'unknown' || active.deployment?.status === 'unknown') && <p role="status" className="rounded-lg bg-amber-400/10 p-3 text-amber-200">Unknown provider outcome. Inspect the recorded branch, commit, PR or deployment ID with an operator. Do not retry a write automatically.</p>}
+            {active.durationMs != null && <p className="text-slate-500">Run duration: {(active.durationMs / 1000).toFixed(1)} seconds · Provider requests recorded: {active.providerMetrics?.length || 0}</p>}
             {active.error && <div className="rounded-lg border border-rose-400/20 bg-rose-400/[0.06] p-3 text-rose-200">{active.error}</div>}
           </div>
         </Panel>
@@ -242,4 +260,15 @@ function Metric({ label, value, icon: Icon, tone }) {
 }
 function DeliveryLink({ label, value, href }) {
   return <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-black/20 p-3"><span className="shrink-0 text-slate-500">{label}</span>{href ? <a href={href} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 break-all text-right text-indigo-300 hover:text-white">{value || href}<ArrowUpRight size={12} className="shrink-0" /></a> : <span className="truncate text-right text-slate-500">{value || 'Not created'}</span>}</div>;
+}
+
+function QAEvidence({ qa }) {
+  const e = qa?.execution;
+  return <Panel title="Sandbox QA evidence" icon={Shield}>
+    <p className="text-sm text-slate-200">{e?.state || 'not run'} · {e?.kind || 'static only'}</p>
+    <p className="mt-2 text-xs text-slate-400">Cleanup: {e?.cleanup || 'not confirmed'} · Duration: {e?.durationMs ?? 'unknown'} ms</p>
+    <p className="mt-1 break-all text-[10px] text-slate-500">Input digest: {e?.inputHash || 'none'}</p>
+    <ul className="mt-3 space-y-2 text-xs">{e?.commands?.map((c, i) => <li key={i} className="rounded bg-black/20 p-2"><code>{c.argv?.join(' ')}</code><p>Exit {c.exitCode} · {c.durationMs} ms</p><p className="text-slate-400">{c.outputSummary}</p></li>)}</ul>
+    {qa?.status !== 'passed' && <p className="mt-3 text-xs text-amber-200">Execution is blocked. Fix failed validation, provision missing sandbox dependencies, or regenerate a supported proposal. Approval cannot override mandatory QA.</p>}
+  </Panel>;
 }

@@ -33,7 +33,7 @@ test('WORKFLOW 1 / Manual: HTTP intent → OpenAI → pinned context → plan �
   const result = await app.start('manual');
   assert.equal(result.status, 200); assert.equal(result.body.status, 'suggested');
   assert.equal(result.body.decision.decision, 'suggest'); assert.equal(result.body.qa.status, 'passed');
-  assert.equal(result.body.qa.execution.kind, 'mock-sandbox');
+  assert.equal(result.body.qa.execution.evidenceSource, 'mock');
   assert.equal(result.body.qa.executedTests[0].exitCode, 0);
   assert.equal(app.providers.aiCalls.length, 3); assert.equal(app.mutations().length, 0);
   const stored = (await app.request(`/runs/${result.body.runId}`)).body.run;
@@ -211,4 +211,13 @@ test('CI refresh endpoints enforce authentication, owner/operator scope and dist
   assert.equal((await app.request(`/runs/${runId}/checks/refresh`, { body: {} })).status, 429);
   assert.equal(app.mutations().length, writes);
   assert.ok((await getRun(runId, 'user-a')).events.some(e => e.step === 'github-checks'));
+});
+
+test('cancellation prevents the first GitHub mutation and is never permission to replay execution', async t => {
+  const { createRunDevSphere } = await import('../engines/orchestrator.js');
+  const { createQAAgent } = await import('../agents/qaAgent.js');
+  const { passedQA } = await import('./helpers/qa.js');
+  const app = await workflow(t, {}, { runDevSphere: createRunDevSphere({ qaAgent: createQAAgent({ execute: async () => passedQA.execution }), getRun: async () => ({ cancelRequested: true }) }) });
+  const result = await app.start('assisted'); assert.equal(result.status, 502);
+  assert.equal(app.mutations().length, 0); assert.equal((await getRun(result.body.runId, 'user-a')).status, 'cancelled');
 });

@@ -1,3 +1,4 @@
+import { observedFetch } from './providerTelemetry.js';
 import OpenAI from 'openai';
 import Ajv from 'ajv';
 import { boundedInteger, containsCredential, ServiceError } from '../utils/security.js';
@@ -13,7 +14,7 @@ function getClient() {
   const maxRetries = boundedInteger(process.env.OPENAI_MAX_RETRIES, 1, 0, 2);
   const configuration = JSON.stringify([apiKey, timeout, maxRetries]);
   if (!client || clientConfiguration !== configuration) {
-    client = new OpenAI({ apiKey, timeout, maxRetries, fetch: (...args) => globalThis.fetch(...args) });
+    client = new OpenAI({ apiKey, timeout, maxRetries, fetch: (...args) => observedFetch('openai', ...args) });
     clientConfiguration = configuration;
   }
   return client;
@@ -39,8 +40,11 @@ export function createStructuredGenerator(provider = getClient) {
       throw new ServiceError(error.name === 'APIConnectionTimeoutError' || error.name === 'APIUserAbortError' || signal?.aborted ? 'OpenAI request timed out or was canceled; no proposal was generated.' : `OpenAI request failed${error.status ? ` (${error.status})` : ' (network error)'}. No proposal was generated.`, { status, code: error.status === 429 ? 'OPENAI_RATE_LIMIT' : 'OPENAI_ERROR' });
     }
     const usage = response.usage;
+    const inputPrice = Number(process.env.OPENAI_INPUT_USD_PER_MILLION);
+    const outputPrice = Number(process.env.OPENAI_OUTPUT_USD_PER_MILLION);
+    const priced = Boolean(process.env.OPENAI_INPUT_USD_PER_MILLION && process.env.OPENAI_OUTPUT_USD_PER_MILLION) && process.env.OPENAI_PRICE_MODEL === response.model && Number.isFinite(inputPrice) && inputPrice >= 0 && Number.isFinite(outputPrice) && outputPrice >= 0;
     if (usage && Number.isFinite(usage.input_tokens) && Number.isFinite(usage.output_tokens)) {
-      await onUsage?.({ stage: schemaName, model: response.model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens ?? usage.input_tokens + usage.output_tokens });
+      await onUsage?.({ stage: schemaName, model: response.model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens ?? usage.input_tokens + usage.output_tokens, estimatedCostUsd: priced ? (usage.input_tokens * inputPrice + usage.output_tokens * outputPrice) / 1_000_000 : null, costBasis: priced ? 'operator-configured list prices; excludes cache discounts and other charges' : 'not configured for exact returned model' });
     }
     if (response.status !== 'completed') throw new ServiceError(`OpenAI output was not completed (${response.status || 'invalid response'}); regenerate a smaller request.`, { code: 'OPENAI_INCOMPLETE' });
     if (response.output?.some(item => item.content?.some(part => part.type === 'refusal'))) throw new ServiceError('OpenAI declined this request; no proposal was generated.', { code: 'OPENAI_REFUSAL' });

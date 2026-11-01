@@ -55,9 +55,10 @@ if (selected.includes('firebase')) await check('Firestore durable history, owner
   report.resources.push({ provider: 'firebase', project: process.env.STAGING_FIREBASE_PROJECT_ID, collection: 'devsphereRuns', id: runId, lockId: owner }); await save();
   try {
     // Synthetic transaction fixture, never passed to an executor or a provider.
-    const proposal = { repository: 'fixture/transaction-only', changes: [], qa: { status: 'passed' } };
+    const qa = { status: 'passed', execution: { protocol: 'sandbox-v1', kind: 'sandbox', evidenceSource: 'synthetic-transaction-fixture', status: 'passed', state: 'passed', cleanup: 'confirmed', inputHash: 'a'.repeat(64), attempted: [{ id: 'json' }], commands: [{ id: 'json', argv: ['node', '/opt/qa/json-check.mjs'], exitCode: 0, durationMs: 1 }] } };
+    const proposal = { repository: 'fixture/transaction-only', changes: [], qa };
     const hash = proposalHash(proposal);
-    await service.createRun(runId, { userId: owner, status: 'pending_approval', approval: 'pending', proposal, approvalHash: hash, qa: { status: 'passed' }, decision: { decision: 'ask' } });
+    await service.createRun(runId, { userId: owner, status: 'pending_approval', approval: 'pending', proposal, approvalHash: hash, qa, decision: { decision: 'ask' } });
     await assert.rejects(service.createRun(`${runId}-duplicate`, { userId: owner }));
     await service.appendRunEvent(runId, owner, { step: 'one', status: 'completed' });
     await service.appendRunEvent(runId, owner, { step: 'two', status: 'completed' });

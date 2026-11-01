@@ -28,6 +28,8 @@ export function validateSnapshot(files) {
 export function commandPolicy(files, requested) {
   validateSnapshot(files);
   if (!Array.isArray(requested) || !requested.length || new Set(requested).size !== requested.length || requested.some(id => !Object.hasOwn(COMMANDS, id))) throw new Error('Command policy rejected the requested validation.');
+  if (!requested.some(id => ['build', 'test', 'json'].includes(id))) throw new Error('Installation alone is not validation.');
+  if (requested.every(id => id === 'json') && files.some(f => /\.(js|jsx|mjs|cjs|ts|tsx)$/i.test(f.path))) throw Object.assign(new Error('JSON parsing cannot validate source code.'), { code: 'unsupported' });
   const manifest = files.find(f => f.path === 'package.json');
   if (requested.some(id => id !== 'json')) {
     if (!manifest) throw Object.assign(new Error('Root package.json is required.'), { code: 'unsupported' });

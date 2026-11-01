@@ -1,3 +1,4 @@
+import { hasMandatoryQA } from '../services/qa/evidence.js';
 export const EXECUTION_MODES = Object.freeze(['manual', 'approval', 'assisted', 'full-auto']);
 export const RISK_LEVELS = Object.freeze(['low', 'medium', 'high']);
 export const IMPACT_SCOPES = Object.freeze(['file', 'module', 'system']);
@@ -8,7 +9,7 @@ export function evaluateDecision({ confidence, risk, impact = 'file', mode, qa }
   if (!IMPACT_SCOPES.includes(impact)) throw new TypeError('impact must be file, module, or system');
   if (!EXECUTION_MODES.includes(mode)) throw new TypeError('mode is invalid');
 
-  const qaPassed = qa?.status === 'passed';
+  const qaPassed = hasMandatoryQA(qa);
   const qaFailed = qa?.status === 'failed';
   let decision;
   let reason;

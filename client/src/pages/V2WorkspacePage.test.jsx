@@ -12,7 +12,7 @@ vi.mock('../context/AuthContext', () => ({ useAuth: () => state.session }));
 vi.mock('../services/socket', () => ({ socketOrigin: () => 'https://socket.example.test' }));
 vi.mock('socket.io-client', () => ({ io: vi.fn((_origin, options) => { const socket = { options, events: {}, on: vi.fn((name, handler) => { socket.events[name] = handler; }), disconnect: vi.fn() }; state.sockets.push(socket); return socket; }) }));
 const hash = 'b'.repeat(64);
-const proposal = () => ({ issue: 'A specific helper defect', suggestedFix: 'A complete defensive helper change', confidence: 95, risk: 'medium', impact: 'module', repository: 'example/project', defaultBranch: 'trunk', baseSha: 'a'.repeat(40), decision: { decision: 'ask', reason: 'This exact change requires approval.' }, changes: [{ path: 'src/helper.js', operation: 'update', content: 'export const value = 2;', reason: 'A bounded helper change' }], qa: { status: 'passed', summary: 'Static checks only; target tests were not executed.', checks: [], executedTests: [] } });
+const proposal = () => ({ issue: 'A specific helper defect', suggestedFix: 'A complete defensive helper change', confidence: 95, risk: 'medium', impact: 'module', repository: 'example/project', defaultBranch: 'trunk', baseSha: 'a'.repeat(40), decision: { decision: 'ask', reason: 'This exact change requires approval.' }, changes: [{ path: 'src/helper.js', operation: 'update', content: 'export const value = 2;', reason: 'A bounded helper change' }], qa: { status: 'passed', summary: 'Mock sandbox evidence for UI state testing, not live certification.', execution: { protocol: 'sandbox-v1', state: 'passed', cleanup: 'confirmed', kind: 'sandbox', commands: [] }, checks: [], executedTests: [] } });
 const pendingRun = () => ({ id: 'run-a', runId: 'run-a', input: 'Improve the existing helper', mode: 'approval', status: 'pending_approval', approval: 'pending', approvalHash: hash, proposal: proposal(), events: [], createdAt: '2026-10-31T00:00:00Z' });
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 let run;
@@ -86,4 +86,31 @@ it('notification deep links select a different run without unmounting the existi
   const page = render(<V2WorkspacePage />); await waitFor(() => expect(api.get).toHaveBeenCalled());
   window.history.replaceState(null, '', '/v2?runId=run-a'); page.rerender(<V2WorkspacePage />);
   expect(await screen.findByText('A specific helper defect')).toBeInTheDocument(); expect(api.get).toHaveBeenCalledWith('/v2/runs/run-a');
+});
+
+it('CI refresh displays actual recorded SHA/check links and never initiates a write/deploy automatically', async () => {
+  run = { ...run, status: 'pull_request', approval: 'approved', pullNumber: 7, commitSha: 'c'.repeat(40), ci: { state: 'failed', repository: 'example/project', headSha: 'c'.repeat(40), observed: [{ source: 'check-run', id: 12, name: 'unit-tests', conclusion: 'failure', summary: 'Two assertions failed', url: 'https://github.com/example/project/actions/runs/12' }] } };
+  history = [run]; render(<V2WorkspacePage />); fireEvent.click(await screen.findByRole('button', { name: /Improve the existing helper/ }));
+  expect(await screen.findByText('Two assertions failed')).toBeInTheDocument(); expect(screen.getByRole('link', { name: /Open actual check/ })).toHaveAttribute('href', 'https://github.com/example/project/actions/runs/12'); expect(api.post).not.toHaveBeenCalled();
+  api.post.mockImplementation(async () => { run = { ...run, ci: { ...run.ci, state: 'stale', reason: 'PR head changed' } }; return { data: { ci: run.ci } }; });
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh checks' })); expect(await screen.findByText('PR head changed')).toBeInTheDocument(); expect(api.post).toHaveBeenCalledWith('/v2/runs/run-a/checks/refresh', undefined);
+});
+it('duplicate approval clicks share one in-flight action and unknown writes show recovery guidance', async () => {
+  await selectPending(); const request = deferred(); api.post.mockReturnValue(request.promise); const button = screen.getByRole('button', { name: /Approve exact/ });
+  fireEvent.click(button); fireEvent.click(button); expect(api.post).toHaveBeenCalledTimes(1);
+  run = { ...run, status: 'failed', executionState: 'unknown', approval: 'approved' };
+  await act(async () => request.resolve({ data: {} })); expect(await screen.findByText(/Unknown provider outcome/)).toBeInTheDocument(); expect(screen.queryByRole('button', { name: /Approve exact/ })).not.toBeInTheDocument();
+});
+it('static-only old approval records do not show execution buttons', async () => {
+  delete run.proposal.qa.execution; history = [run]; render(<V2WorkspacePage />); fireEvent.click(await screen.findByRole('button', { name: /Improve the existing helper/ }));
+  await screen.findByText('A specific helper defect'); expect(screen.queryByRole('button', { name: /Approve exact/ })).not.toBeInTheDocument(); expect(screen.getByText('not run · static only')).toBeInTheDocument();
+});
+it('logged-out page does not fetch private history or open sockets', async () => {
+  state.session = { user: null, token: null }; render(<V2WorkspacePage />);
+  expect(await screen.findByText(/Sign in to access/)).toBeInTheDocument(); expect(api.get).not.toHaveBeenCalled(); expect(state.sockets).toHaveLength(0);
+});
+it('events from a disconnected previous-account socket cannot repopulate the new account', async () => {
+  await selectPending(); const old = state.sockets[0]; cleanup(); state.session = { user: { id: 'user-b' }, token: 'session-b' }; history = []; render(<V2WorkspacePage />);
+  await act(async () => old.events['devsphere:update']({ runId: 'run-a', step: 'qa', status: 'failed', detail: { message: 'Previous account private error' } }));
+  expect(screen.queryByText('Previous account private error')).not.toBeInTheDocument();
 });

@@ -9,13 +9,13 @@ export function integrationPreflight(env = process.env, provider = 'all') {
   if (selected.some(p => ['github', 'vercel'].includes(p))) {
     need('STAGING_GITHUB_TOKEN'); need('STAGING_GITHUB_REPOSITORY');
     if (!/^[A-Za-z0-9_.-]+\/devsphere-verification-[A-Za-z0-9_.-]+$/.test(env.STAGING_GITHUB_REPOSITORY || '')) blockers.push('Use a dedicated owner/devsphere-verification-* repository.');
-    if (env.STAGING_GITHUB_REPOSITORY === env.GITHUB_REPOSITORY) blockers.push('Staging and application repository must differ.');
+    if (env.STAGING_GITHUB_REPOSITORY && env.STAGING_GITHUB_REPOSITORY === env.GITHUB_REPOSITORY) blockers.push('Staging and application repository must differ.');
   }
   if (selected.includes('openai')) { need('STAGING_OPENAI_API_KEY'); need('STAGING_OPENAI_MODEL'); }
   if (selected.includes('firebase')) {
     need('STAGING_FIREBASE_PROJECT_ID');
     if (!/^(demo-|.*(?:staging|sandbox|test)-)/.test(env.STAGING_FIREBASE_PROJECT_ID || '')) blockers.push('Firebase project must have a staging/test/sandbox or demo name.');
-    if (env.STAGING_FIREBASE_PROJECT_ID === env.FIREBASE_PROJECT_ID) blockers.push('Staging and application Firebase projects must differ.');
+    if (env.STAGING_FIREBASE_PROJECT_ID && env.STAGING_FIREBASE_PROJECT_ID === env.FIREBASE_PROJECT_ID) blockers.push('Staging and application Firebase projects must differ.');
     if (!env.FIRESTORE_EMULATOR_HOST) need('STAGING_GOOGLE_APPLICATION_CREDENTIALS');
     if (env.FIRESTORE_EMULATOR_HOST && !/^(localhost|127\.0\.0\.1):\d+$/.test(env.FIRESTORE_EMULATOR_HOST)) blockers.push('Only a local Firestore emulator is supported.');
   }
@@ -31,7 +31,7 @@ export function integrationPreflight(env = process.env, provider = 'all') {
   if (selected.includes('vercel')) {
     for (const name of ['STAGING_VERCEL_TOKEN', 'STAGING_VERCEL_PROJECT_ID', 'STAGING_VERCEL_PROJECT_NAME']) need(name);
     if (!/^(devsphere-verification|devsphere-staging)-/.test(env.STAGING_VERCEL_PROJECT_NAME || '')) blockers.push('Use a dedicated devsphere-verification-* Vercel project.');
-    if (env.STAGING_VERCEL_PROJECT_ID === env.VERCEL_PROJECT_ID) blockers.push('Staging and application Vercel project must differ.');
+    if (env.STAGING_VERCEL_PROJECT_ID && env.STAGING_VERCEL_PROJECT_ID === env.VERCEL_PROJECT_ID) blockers.push('Staging and application Vercel project must differ.');
     if (provider !== 'all' && !/^devsphere-verification\/[A-Za-z0-9_-]+$/.test(env.STAGING_PREVIEW_REF || '')) blockers.push('STAGING_PREVIEW_REF must name an isolated verification branch.');
   }
   return { mode: 'configuration-only; no provider calls', selected, enabled: blockers.length === 0, blockers };

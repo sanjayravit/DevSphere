@@ -1,5 +1,6 @@
+import { hasMandatoryQA } from './qa/evidence.js';
 import { db } from '../firebaseAdmin.js';
-import { proposalHash, redact, ServiceError } from '../utils/security.js';
+import { boundedInteger, proposalHash, redact, ServiceError } from '../utils/security.js';
 
 let activeDb = db;
 export const configureFirestore = database => { activeDb = database; };
@@ -14,22 +15,27 @@ function boundedDocument(data) {
   if (Buffer.byteLength(JSON.stringify(data)) > 900_000) throw new ServiceError('Run audit record exceeds the safe Firestore document size.', { status: 413 });
   return data;
 }
+const visibleCI = ci => ci?.passed && (!ci.checkedAt || Date.parse(ci.checkedAt) < Date.now() - 300_000) ? { ...ci, state: 'stale', passed: false, reason: 'Recorded CI observation expired. Refresh the exact PR head.' } : ci;
 const eventList = (run, event) => [...(run.events || []).slice(-99), event];
 
 export async function createRun(runId, data) {
   const firestore = requireDb();
   const ref = runRef(runId);
   const lock = firestore.collection('devsphereRunLocks').doc(validId(data.userId));
+  const requestRef = data.requestId ? firestore.collection('devsphereRunRequests').doc(proposalHash({ userId: data.userId, requestId: data.requestId })) : null;
   const createdAt = now();
   const record = boundedDocument({ ...redact(data), createdAt, updatedAt: createdAt, events: [] });
   await firestore.runTransaction(async transaction => {
+    const previous = requestRef ? await transaction.get(requestRef) : null;
+    if (previous?.exists) throw Object.assign(new ServiceError('This request was already recorded; open the existing run instead of retrying.', { status: 409, code: 'DUPLICATE_REQUEST' }), { runId: previous.data().runId });
     const snap = await transaction.get(lock);
     const current = snap.exists ? snap.data() : {};
     if (current.runId && current.expiresAt > Date.now()) throw new ServiceError('Another run is active for this user. Wait for it to finish.', { status: 429, code: 'RUN_LIMIT' });
     const sameWindow = current.windowStart > Date.now() - 60_000;
     const count = sameWindow ? current.count || 0 : 0;
-    if (count >= 5) throw new ServiceError('Run request limit reached; try again in a minute.', { status: 429, code: 'RUN_LIMIT' });
+    if (count >= boundedInteger(process.env.V2_RUNS_PER_MINUTE, 5, 1, 10)) throw new ServiceError('Run request limit reached; try again in a minute.', { status: 429, code: 'RUN_LIMIT' });
     transaction.create(ref, record);
+    if (requestRef) transaction.create(requestRef, { userId: data.userId, runId, createdAt });
     transaction.set(lock, { runId, expiresAt: Date.now() + 300_000, windowStart: sameWindow ? current.windowStart : Date.now(), count: count + 1 });
   });
 }
@@ -58,14 +64,17 @@ export async function updateRun(runId, userId, patch, { expectedStatus } = {}) {
 }
 export async function getRun(runId, userId) {
   const snap = await runRef(runId).get();
-  return snap.exists && snap.data().userId === userId ? { ...snap.data(), id: snap.id } : null;
+  if (!snap.exists || snap.data().userId !== userId) return null;
+  const run = { ...snap.data(), id: snap.id };
+  if (run.ci) run.ci = visibleCI(run.ci);
+  return run;
 }
 export async function listRuns(userId, limit = 30) {
   const count = Math.min(50, Math.max(1, Math.trunc(limit) || 30));
   const snapshot = await requireDb().collection('devsphereRuns').where('userId', '==', userId).orderBy('createdAt', 'desc').limit(count).get();
   return snapshot.docs.map(doc => {
-    const { proposal, events, plan, qa, usage, ...summary } = doc.data();
-    return { ...summary, id: doc.id, issue: proposal?.issue, eventCount: events?.length || 0 };
+    const { proposal, events, plan, qa, usage, providerMetrics, ci, ...summary } = doc.data();
+    return { ...summary, ...(ci ? { ci: { state: visibleCI(ci).state, passed: visibleCI(ci).passed, headSha: ci.headSha || null, checkedAt: ci.checkedAt || null } } : {}), id: doc.id, issue: proposal?.issue, eventCount: events?.length || 0 };
   });
 }
 
@@ -75,7 +84,7 @@ export async function claimRunApproval(runId, userId, approvalHash) {
     const snap = await transaction.get(ref);
     if (!snap.exists || snap.data().userId !== userId) return null;
     const current = snap.data();
-    if (current.status !== 'pending_approval' || current.approval !== 'pending' || current.approvalHash !== approvalHash || !current.proposal || proposalHash(current.proposal) !== approvalHash || current.qa?.status !== 'passed' || current.decision?.decision !== 'ask') return null;
+    if (current.status !== 'pending_approval' || current.approval !== 'pending' || current.approvalHash !== approvalHash || !current.proposal || proposalHash(current.proposal) !== approvalHash || !hasMandatoryQA(current.qa) || !hasMandatoryQA(current.proposal?.qa) || current.decision?.decision !== 'ask') return null;
     const lock = requireDb().collection('devsphereRunLocks').doc(validId(userId));
     const lease = await transaction.get(lock);
     const active = lease.exists ? lease.data() : {};
@@ -109,7 +118,7 @@ export async function claimRunDeployment(runId, userId) {
     const run = snap.data();
     if (!run.pullNumber || !['pull_request', 'deployment_skipped', 'deployment_failed', 'deployment_pending'].includes(run.status)) return null;
     if (run.status === 'deployment_pending' && !run.deployment?.deploymentId) return null;
-    if (run.qa?.status !== 'passed' || !['auto', 'ask'].includes(run.decision?.decision) || run.decision.decision === 'ask' && run.approval !== 'approved') return null;
+    if (!hasMandatoryQA(run.qa) || !hasMandatoryQA(run.proposal?.qa) || !['auto', 'ask'].includes(run.decision?.decision) || run.decision.decision === 'ask' && run.approval !== 'approved') return null;
     transaction.update(ref, { status: 'deployment_verifying', updatedAt: now() });
     return { ...run, id: snap.id };
   });
@@ -186,5 +195,32 @@ export async function recordCheckRefresh(runId, userId, generation, ci) {
     const patch = { ci: redact(ci), lastCheckFingerprint: fingerprint, updatedAt: now(), ...(changed ? { events: eventList(run, event) } : {}) };
     boundedDocument({ ...run, ...patch }); transaction.update(ref, patch);
     return { ci: patch.ci, event: changed ? event : null };
+  });
+}
+
+export async function consumeProviderQuota(userId, provider, limit) {
+  if (!['openai', 'github', 'vercel'].includes(provider) || !Number.isInteger(limit) || limit < 1 || limit > 300) throw new Error('Invalid provider quota.');
+  const ref = requireDb().collection('devsphereProviderQuotas').doc(proposalHash({ userId: validId(userId), provider }));
+  await requireDb().runTransaction(async transaction => {
+    const snap = await transaction.get(ref);
+    const record = snap.exists ? snap.data() : {};
+    const windowStart = Math.floor(Date.now() / 60_000) * 60_000;
+    const count = record.windowStart === windowStart ? record.count || 0 : 0;
+    if (count >= limit) throw new ServiceError('Per-user provider request quota reached. Wait before refreshing; do not retry ambiguous writes.', { status: 429, code: 'PROVIDER_QUOTA', retryAfter: 60 });
+    transaction.set(ref, { userId, provider, windowStart, count: count + 1 });
+  });
+}
+
+export async function requestRunCancellation(runId, userId) {
+  const ref = runRef(runId);
+  return requireDb().runTransaction(async transaction => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists || snap.data().userId !== userId) return null;
+    const run = snap.data();
+    if (!['running', 'executing'].includes(run.status)) return null;
+    if (run.cancelRequested) return { ...run, id: snap.id };
+    const event = { runId, step: 'cancellation', status: 'requested', at: now(), detail: { message: 'Cancellation requested. Already accepted provider writes cannot be undone.' } };
+    const patch = { cancelRequested: true, cancelRequestedAt: now(), events: eventList(run, event), updatedAt: now() };
+    transaction.update(ref, patch); return { ...run, ...patch, id: snap.id };
   });
 }

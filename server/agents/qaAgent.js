@@ -4,7 +4,7 @@ import { validateRepositoryPath } from '../utils/repositorySafety.js';
 import { containsCredential } from '../utils/security.js';
 
 export function createQAAgent({ execute = executeQA } = {}) {
-return async function qaAgent(input, options = {}) {
+  return async function qaAgent(input, options = {}) {
   const { changes } = input;
   const checks = [];
   for (const file of changes || []) {
@@ -27,14 +27,13 @@ return async function qaAgent(input, options = {}) {
         checks.push({ path: file.path, type: 'source-review', status: 'inconclusive', message: 'This file type requires the target repository validation tools.' });
       }
     } catch (error) {
-      checks.push({ path: file.path || '(missing)', type: 'static-validation', status: 'failed', message: error.message.slice(0, 500) });
+      checks.push({ path: file?.path || '(missing)', type: 'static-validation', status: 'failed', message: error.message.slice(0, 500) });
     }
   }
   const status = checks.some(check => check.status === 'failed') ? 'failed' : !checks.length || checks.some(check => check.status === 'inconclusive') ? 'inconclusive' : 'passed';
   const execution = status === 'passed' ? await execute(input, options) : { kind: 'sandbox', status: 'inconclusive', state: 'static_blocked', commands: [] };
   const finalStatus = status === 'failed' ? 'failed' : status === 'inconclusive' ? 'inconclusive' : execution.status;
   return { status: finalStatus, passed: finalStatus === 'passed', checks: checks.map(check => ({ ...check, kind: 'static' })), execution, executedTests: execution.commands, summary: `Static: ${status}. Sandbox: ${execution.state}. Only completed sandbox validation can satisfy mandatory QA; CI and independent deployment gates still apply.` };
-}
-
+  };
 }
 export const qaAgent = createQAAgent();

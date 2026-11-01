@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 export const repositoryInfo = { id: 12345, default_branch: 'trunk', full_name: 'example/project', html_url: 'https://github.com/example/project' };
 export const baseSha = 'a'.repeat(40);
 export const blobSha = content => createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex');
-const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', ...headers } });
+const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(Array.isArray(value?.check_runs) ? { total_count: value.check_runs.length, ...value } : value), { status, headers: { 'content-type': 'application/json', ...headers } });
 export function mockProviders(t, configuration = {}) {
   const original = globalThis.fetch;
   const environment = { GITHUB_REPOSITORY: 'example/project', GITHUB_TOKEN: 'mock-github-credential', OPENAI_API_KEY: 'mock-openai-credential', OPENAI_MAX_RETRIES: '0', GITHUB_MAX_RETRIES: '0', JWT_SECRET: 'test-only-session-secret-at-least-32-bytes', V2_ALLOWED_USER_IDS: 'user-a,user-b,http-test-user' };

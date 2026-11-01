@@ -1,3 +1,4 @@
+import { observedFetch } from './providerTelemetry.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { boundedInteger, containsCredential, redact, ServiceError } from '../utils/security.js';
@@ -25,11 +26,12 @@ async function request(path, { signal, ...options } = {}) {
     let response;
     try {
       const timeout = AbortSignal.timeout(boundedInteger(process.env.GITHUB_TIMEOUT_MS, 15_000, 1_000, 30_000));
-      response = await fetch(`${apiBase}${path}`, {
-        ...options, signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      response = await observedFetch('github', `${apiBase}${path}`, {
+        ...options, redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, 'X-GitHub-Api-Version': '2022-11-28', ...(options.body ? { 'Content-Type': 'application/json' } : {}) }
-      });
+      }, attempt);
     } catch (error) {
+      if (error.code === 'PROVIDER_QUOTA') throw error;
       if (attempt < retries && !signal?.aborted) { await delay(100 * (attempt + 1), undefined, { signal }); continue; }
       throw new ServiceError('GitHub request timed out, was canceled, or could not reach the service.', { code: 'GITHUB_NETWORK_ERROR', ambiguous: options.method && options.method !== 'GET' });
     }
@@ -187,7 +189,7 @@ export async function createPullRequest(repo, branch, base, options = {}) {
   if (options.expectedHeadSha && await getBranchHead(repo, branch, { signal: options.signal }) !== options.expectedHeadSha) throw conflict('Feature branch changed before PR creation.');
   if (options.expectedBaseSha && await getBranchHead(repo, info.defaultBranch, { signal: options.signal }) !== options.expectedBaseSha) throw conflict('Default branch advanced during execution; regenerate before opening a PR.');
   const pull = await request(`/repos/${info.owner}/${info.name}/pulls`, { signal: options.signal, method: 'POST', body: JSON.stringify({ title: (options.title || 'DevSphere V2: proposed changes').slice(0, 240), body: options.body || 'Review this DevSphere proposal and required CI checks before merging.', head: branch, base: info.defaultBranch }) });
-  if (!Number.isInteger(pull.number) || !isString(pull.html_url) || pull.base?.ref !== info.defaultBranch || pull.head?.ref !== branch || pull.state !== 'open') throw Object.assign(invalid(true), { candidatePull: { branch, base: info.defaultBranch, number: Number.isInteger(pull.number) ? pull.number : null } });
+  if (!Number.isInteger(pull.number) || !isString(pull.html_url) || pull.base?.ref !== info.defaultBranch || pull.head?.ref !== branch || pull.state !== 'open' || !isSha(pull.head?.sha) || options.expectedHeadSha && pull.head.sha !== options.expectedHeadSha || pull.base?.repo?.full_name?.toLowerCase() !== info.fullName.toLowerCase() || pull.head?.repo?.full_name?.toLowerCase() !== info.fullName.toLowerCase()) throw Object.assign(invalid(true), { candidatePull: { branch, base: info.defaultBranch, number: Number.isInteger(pull.number) ? pull.number : null } });
   return { number: pull.number, url: `${info.htmlUrl}/pull/${pull.number}`, state: pull.state, base: pull.base.ref, head: pull.head.ref };
 }
 export async function getPullRequest(repo, number, options) {
@@ -203,7 +205,7 @@ async function getPages(path, key, options) {
   for (let page = 1; page <= 10; page++) {
     const body = await request(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, options);
     const items = key ? body[key] : body;
-    if (!Array.isArray(items)) throw invalid();
+    if (!Array.isArray(items) || key && (!Number.isInteger(body.total_count) || body.total_count < 0 || items.length < 100 && body.total_count > all.length + items.length)) throw invalid();
     all.push(...items);
     if (items.length < 100) return all;
   }

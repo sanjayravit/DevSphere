@@ -1,3 +1,4 @@
+import { observedFetch } from './providerTelemetry.js';
 import { boundedInteger, ServiceError } from '../utils/security.js';
 
 const teamQuery = () => process.env.VERCEL_TEAM_ID ? `?teamId=${encodeURIComponent(process.env.VERCEL_TEAM_ID)}` : '';
@@ -6,12 +7,12 @@ export async function vercelRequest(path, { method = 'GET', body, signal } = {})
   let response;
   const timeout = AbortSignal.timeout(boundedInteger(process.env.VERCEL_TIMEOUT_MS, 15_000, 1_000, 30_000));
   try {
-    response = await fetch(`https://api.vercel.com${path}${teamQuery()}`, {
-      method, headers: { Authorization: `Bearer ${process.env.VERCEL_API_TOKEN}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    response = await observedFetch('vercel', `https://api.vercel.com${path}${teamQuery()}`, {
+      method, redirect: 'error', headers: { Authorization: `Bearer ${process.env.VERCEL_API_TOKEN}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout
     });
-  } catch { throw new ServiceError('Vercel request timed out or could not reach the service. Verify the provider before retrying a deployment.', { code: 'VERCEL_NETWORK_ERROR', ambiguous: method === 'POST' }); }
+  } catch (error) { if (error.code === 'PROVIDER_QUOTA') throw error; throw new ServiceError('Vercel request timed out or could not reach the service. Verify the provider before retrying a deployment.', { code: 'VERCEL_NETWORK_ERROR', ambiguous: method === 'POST' }); }
   if (!response.ok) throw new ServiceError(`Vercel API request failed (${response.status}).`, { status: response.status === 429 ? 429 : 502, code: 'VERCEL_ERROR', ambiguous: method === 'POST' && response.status >= 500 });
   try { return await response.json(); }
   catch { throw new ServiceError('Vercel returned malformed JSON.', { code: 'VERCEL_INVALID_RESPONSE', ambiguous: method === 'POST' }); }

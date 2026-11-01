@@ -4,10 +4,10 @@ import { remoteSandboxProvider } from './remoteProvider.js';
 import { getQASnapshot } from '../githubService.js';
 import { redact } from '../../utils/security.js';
 const states = new Set(['passed', 'failed', 'timeout', 'cancelled', 'resource_limit', 'missing_dependencies', 'unsupported', 'incomplete', 'runner_unavailable']);
-export function createQAExecution({ providerFactory = remoteSandboxProvider, snapshot = getQASnapshot, timeoutMs = LIMITS.timeoutMs } = {}) {
+export function createQAExecution({ providerFactory = remoteSandboxProvider, snapshot = getQASnapshot, timeoutMs = LIMITS.timeoutMs + 10_000 } = {}) {
   return async (input, { signal } = {}) => {
     const started = Date.now();
-    const evidence = { kind: 'sandbox', state: 'runner_unavailable', status: 'inconclusive', commands: [], artifacts: [], limits: LIMITS, durationMs: 0 };
+    const evidence = { protocol: 'sandbox-v1', kind: 'sandbox', state: 'runner_unavailable', status: 'inconclusive', commands: [], commandsComplete: false, artifacts: [], limits: LIMITS, durationMs: 0 };
     let provider; const id = randomUUID();
     const deadline = AbortSignal.timeout(timeoutMs);
     const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
@@ -38,6 +38,7 @@ export function createQAExecution({ providerFactory = remoteSandboxProvider, sna
         // Raw tool output can contain arbitrary private information. Do not persist it.
         return { ...commands[i], exitCode: entry.exitCode, durationMs: entry.durationMs, outputSummary: `Exit ${entry.exitCode}; ${Math.min(LIMITS.outputBytes, Math.max(0, Number(entry.outputBytes) || 0))} output bytes captured and discarded.` };
       });
+      evidence.commandsComplete = ['passed', 'failed', 'missing_dependencies', 'resource_limit'].includes(result.state);
       evidence.state = result.state;
       if (result.state === 'passed' && (evidence.commands.length !== commands.length || evidence.commands.some(c => c.exitCode !== 0))) evidence.state = 'incomplete';
       evidence.status = evidence.state === 'passed' ? 'passed' : evidence.state === 'failed' ? 'failed' : 'inconclusive';

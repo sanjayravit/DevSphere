@@ -1,3 +1,4 @@
+import { withProviderScope } from '../services/providerTelemetry.js';
 import express from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { rateLimit } from '../middleware/rateLimit.js';
@@ -5,7 +6,7 @@ import auth, { requireRepositoryOperator } from '../middleware/auth.js';
 import { runDevSphere, executeApprovedRun } from '../engines/orchestrator.js';
 import { getPullRequestChecks } from '../services/githubService.js';
 import { deployAgent } from '../agents/deployAgent.js';
-import { claimCheckRefresh, recordCheckRefresh, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun } from '../services/firebaseService.js';
+import { requestRunCancellation, claimCheckRefresh, recordCheckRefresh, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun } from '../services/firebaseService.js';
 import { proposalHash, safeMessage } from '../utils/security.js';
 import { emitRoomEvent } from '../sockets/socketHandler.js';
 export { authenticateSocket } from '../sockets/authenticateSocket.js';
@@ -19,9 +20,13 @@ function respondError(res, error) {
   if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
   return res.status(error.status && error.status >= 400 && error.status < 600 ? error.status : 502).json({ error: safeMessage(error), code: error.code, runId: error.runId });
 }
+const providerScope = (services, run, userId) => {
+  const metrics = [...(run.providerMetrics || [])];
+  return { userId, onMetric: async metric => { metrics.push(metric); await services.updateRun(run.id, userId, { providerMetrics: metrics.slice(-100) }); } };
+};
 const validHash = hash => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash);
 export function createV2Router(overrides = {}) {
-  const services = { getPullRequestChecks, runDevSphere, executeApprovedRun, deployAgent, claimCheckRefresh, recordCheckRefresh, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun, ...overrides };
+  const services = { getPullRequestChecks, runDevSphere, executeApprovedRun, deployAgent, requestRunCancellation, claimCheckRefresh, recordCheckRefresh, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun, ...overrides };
   const router = express.Router();
   router.use(auth, rateLimit({ limit: 120 }));
   router.param('runId', (req, res, next, runId) => /^[A-Za-z0-9_-]{1,128}$/.test(runId) ? next() : res.status(400).json({ error: 'Invalid run ID.' }));
@@ -58,11 +63,19 @@ export function createV2Router(overrides = {}) {
       if (!await services.getRun(req.params.runId, req.user.id)) return res.status(404).json({ error: 'Run not found.' });
       const run = await services.claimCheckRefresh(req.params.runId, req.user.id);
       if (!run) return res.status(429).set('Retry-After', '60').json({ error: 'No tracked PR or refresh is limited to once per minute.' });
-      const ci = await services.getPullRequestChecks(run.proposal.repository, run.pullNumber, run.commitSha, { signal: AbortSignal.timeout(30_000) });
+      const ci = await withProviderScope(providerScope(services, run, req.user.id), () => services.getPullRequestChecks(run.proposal.repository, run.pullNumber, run.commitSha, { signal: AbortSignal.timeout(30_000) }));
       const stored = await services.recordCheckRefresh(run.id, req.user.id, run.checkGeneration, ci);
       if (!stored) return res.status(409).json({ error: 'A newer refresh superseded this result.' });
       if (stored.event) { try { makeEmitter(req, req.user.id)(stored.event); } catch { /* persisted history is authoritative */ } }
       res.json({ ci: stored.ci });
+    } catch (error) { respondError(res, error); }
+  });
+  router.post('/runs/:runId/cancel', requireRepositoryOperator, async (req, res) => {
+    try {
+      if (!await services.getRun(req.params.runId, req.user.id)) return res.status(404).json({ error: 'Run not found.' });
+      const run = await services.requestRunCancellation(req.params.runId, req.user.id);
+      if (!run) return res.status(409).json({ error: 'Only active runs can be cancelled. Use reject for pending approvals.' });
+      res.status(202).json({ runId: run.id, status: 'cancellation_requested', message: 'Cancellation is cooperative. Inspect persisted provider outcomes; accepted writes cannot be rolled back.' });
     } catch (error) { respondError(res, error); }
   });
   router.post('/runs/:runId/approve', requireRepositoryOperator, async (req, res) => {
@@ -98,7 +111,7 @@ export function createV2Router(overrides = {}) {
       if (!await services.getRun(req.params.runId, req.user.id)) return res.status(404).json({ error: 'Run not found.' });
       claimed = await services.claimRunDeployment(req.params.runId, req.user.id);
       if (!claimed) return res.status(409).json({ error: 'A QA-passing, authorized PR is required and deployment must not already be in progress.' });
-      const outcome = providerOutcome = await services.deployAgent({ repo: claimed.proposal.repository, pullNumber: claimed.pullNumber, commitSha: claimed.commitSha, deployment: claimed.status === 'deployment_pending' ? claimed.deployment : undefined });
+      const outcome = providerOutcome = await withProviderScope(providerScope(services, claimed, req.user.id), () => services.deployAgent({ repo: claimed.proposal.repository, pullNumber: claimed.pullNumber, commitSha: claimed.commitSha, deployment: claimed.status === 'deployment_pending' ? claimed.deployment : undefined }));
       const statuses = { deployed: 'deployed', failed: 'deployment_failed', pending: 'deployment_pending', skipped: 'deployment_skipped' };
       if (!statuses[outcome.status]) throw new Error('Invalid deployment outcome.');
       await services.updateRun(claimed.id, req.user.id, { deployment: outcome, status: statuses[outcome.status] });

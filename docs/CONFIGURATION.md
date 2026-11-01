@@ -71,7 +71,7 @@ Resume uploads: PDF/TXT only, 2 MB multipart input and 60,000 extracted characte
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI` | Optional separate **backend OAuth** sign-in; callback must match the registered public `/api/auth/github/callback` URL. Firebase GitHub popup sign-in is configured in Firebase independently. |
 | `GIT_CACHE_DIR` | Optional isolated cache for the legacy local-commit feature. Production defaults to the OS temp directory; development uses ignored `server/git-cache`. |
 
-Protect the live default branch. Configure required status checks through the branch-protection API with trusted app identities (e.g. the actual GitHub Actions check). Ruleset-only configurations are not currently discovered: absence/inaccessibility of verifiable branch-protection checks safely **skips** deployment. CI is read-only and runs all four required validation commands on Node 22.22.3. Full Auto only opens a PR; it does not authorize merge or production deployment.
+Protect the live default branch. Configure required status checks through the branch-protection API with trusted app identities (e.g. the actual GitHub Actions check). Applicable branch rulesets and legacy protection are both discovered. Missing/inaccessible definitions or unsupported workflow/deployment rules safely **block successful CI verification and skip deployment**. CI is read-only, uses SHA-pinned Node-24 action runtimes, and runs the application checks on Node 22.22.3. Full Auto only opens a PR; it does not authorize merge or production deployment.
 
 Generated writes are limited to 20 files/400 KB proposal content, permitted paths and canonical text/blob data. Base/head/blob conflicts require a fresh proposal and approval. A default branch advancing after approval or during execution blocks stale PR creation. A network timeout can leave an isolated branch/commit at GitHub; consult recorded evidence and GitHub before retrying. There is no rollback of already confirmed isolated commits and no automatic reconciliation of an ambiguous mutation.
 
@@ -108,3 +108,44 @@ The server verifies the merged PR's original delivered head, actual repository/c
 6. Configure ingress limits, backups/retention, monitoring, provider spend alerts, OS worker limits and manual ambiguous-operation recovery. Resolve or explicitly accept remaining upstream advisories under your security policy.
 
 Until these external checks complete, production release remains **BLOCKED**, not implicitly approved by local mocks or a green frontend build.
+
+## 7. Production-readiness additions
+
+| Setting | Default / behavior |
+| --- | --- |
+| `QA_EXECUTION_ENABLED` | Disabled unless exactly `true`; no safe runner means inconclusive QA, never host execution. |
+| `QA_RUNNER_URL`, `QA_RUNNER_TOKEN` | Private HTTPS runner and unique token; server-side only. See [sandbox provisioning](QA-SANDBOX.md). |
+| `QA_COMMANDS` | `install,build,test`; allowlisted command IDs only. JSON-only is rejected for JS/TS snapshots; install alone is not validation. |
+| `QA_SANDBOX_IMAGE`, `QA_RUNNER_PORT` | Separate runner host only: operator-reviewed immutable image digest; internal port 8081. Rootless Docker/gVisor required. |
+| `V2_RUNS_PER_MINUTE` | Durable per-owner limit; default 5, range 1–10. One active run/approval lease per owner. |
+| `V2_PROVIDER_REQUESTS_PER_MINUTE` | Durable limit for each user/provider in V2 run, approval, check refresh and deployment operations. Default 60, range 1–300. Every HTTP attempt consumes a slot, including retries. Not a global account-wide cost cap. |
+| `OPENAI_PRICE_MODEL` | Exact model ID returned by provider for optional pricing; no default estimate. |
+| `OPENAI_INPUT_USD_PER_MILLION`, `OPENAI_OUTPUT_USD_PER_MILLION` | Operator-maintained nonnegative list prices. Estimate only, excludes cache discounts/other charges; unknown prices/models store null, never an invented cost. |
+
+`qa.execution` contains protocol, digest, actual command exits/durations, bounded
+output summaries and cleanup state. Only `sandbox-v1` complete passing evidence
+can satisfy the central Decision Engine or transactional approval/deployment
+claim. Old static approvals must be regenerated, not edited in Firestore.
+
+PR check refresh is once per run per minute, transactionally reserved across
+instances. Every observation records its SHA/time; successful observations older
+than five minutes are served as stale. Provider quotas also bound refresh across
+many runs. History shows current evidence, not perpetual assurances.
+
+`POST /api/v2/runs/:id/cancel` is owner/operator-only and cooperative. Active
+workers check durable cancellation every two seconds and before GitHub stages;
+provider calls and the QA service receive abort signals. Cancellation cannot undo
+accepted writes. If a worker died, a cancellation request alone cannot confirm
+cleanup or absence of provider mutations. Reconcile manually before retrying.
+
+Request IDs are durable single-use owner-scoped deduplication keys. A duplicate
+returns 409 with the existing run ID, not a second execution. Provider timing and
+attempt metadata omit URLs, headers and bodies. Only the latest 100 metrics and
+100 events are held in a run; long-term audit retention requires an operator sink.
+
+New collections: `devsphereRunRequests` (request ID hash → original run) and
+`devsphereProviderQuotas` (owner/provider hash → minute counter). Existing deny-all
+client rules already cover them. New `devsphereRuns.ci`/`providerMetrics` index
+exemptions are operator-reviewed optimizations, not deployed changes. See the
+[release and operations checklist](PRODUCTION-READINESS.md) for explicit project
+selection, retention, backup, recovery and rollback.

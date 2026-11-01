@@ -1,3 +1,5 @@
+import { withProviderScope } from '../services/providerTelemetry.js';
+import { hasMandatoryQA } from '../services/qa/evidence.js';
 import { randomUUID } from 'node:crypto';
 import { processIntent } from './intentEngine.js';
 import { plannerAgent } from '../agents/plannerAgent.js';
@@ -6,7 +8,7 @@ import { qaAgent } from '../agents/qaAgent.js';
 import { analyzeSystem } from './designEngine.js';
 import { evaluateDecision, EXECUTION_MODES } from './decisionEngine.js';
 import { createUniqueBranch, commitChanges, createPullRequest } from '../services/githubService.js';
-import { appendRunEvent, createRun, updateRun, releaseRun } from '../services/firebaseService.js';
+import { appendRunEvent, createRun, updateRun, releaseRun, getRun } from '../services/firebaseService.js';
 import { boundedInteger, proposalHash, redact, safeMessage } from '../utils/security.js';
 import { validateChanges } from '../utils/repositorySafety.js';
 export { proposalHash } from '../utils/security.js';
@@ -19,14 +21,17 @@ async function progress(context, step, status, detail = {}) {
 }
 async function recordFailure(context, error) {
   const message = safeMessage(error);
-  await context.updateRun(context.runId, context.userId, { status: 'failed', error: message, errorCode: error.code || 'RUN_FAILED', ...(error.ambiguous ? { executionState: 'unknown', recovery: 'Inspect the recorded branch and provider before any manual retry. No automatic write retry is permitted.', ...(error.candidatePull ? { candidatePull: error.candidatePull } : {}) } : {}) }).catch(() => null);
+  await context.updateRun(context.runId, context.userId, { status: context.cancelRequested ? 'cancelled' : 'failed', error: message, errorCode: error.code || 'RUN_FAILED', ...(error.ambiguous ? { executionState: 'unknown', recovery: 'Inspect the recorded branch and provider before any manual retry. No automatic write retry is permitted.', ...(error.candidatePull ? { candidatePull: error.candidatePull } : {}) } : {}) }).catch(() => null);
   await progress(context, 'orchestrator', 'failed', { message }).catch(() => null);
   error.runId = context.runId;
 }
 async function executeChanges(context, proposal) {
+  await checkCancellation(context);
+  context.signal.throwIfAborted();
   validateChanges(proposal.changes);
   if (!proposal.baseSha) throw new Error('The proposal has no immutable repository snapshot; regenerate it.');
   await progress(context, 'github-branch', 'running', { message: 'Creating an isolated feature branch from the exact proposed default-branch snapshot.' });
+  await context.updateRun(context.runId, context.userId, { executionStartedAt: new Date().toISOString() });
   let branch;
   try { branch = await context.createUniqueBranch(proposal.repository, proposal.defaultBranch, proposal.baseSha, { signal: context.signal }); }
   catch (error) {
@@ -35,6 +40,7 @@ async function executeChanges(context, proposal) {
   }
   await context.updateRun(context.runId, context.userId, { branch: branch.branch, baseBranch: branch.base, branchUrl: branch.url, baseSha: branch.baseSha });
   await progress(context, 'github-branch', 'completed', { branch: branch.branch });
+  await checkCancellation(context); context.signal.throwIfAborted();
   await progress(context, 'github-commit', 'running', { branch: branch.branch });
   let committed;
   try {
@@ -46,6 +52,7 @@ async function executeChanges(context, proposal) {
   await context.updateRun(context.runId, context.userId, { commitSha: committed.commitSha, commitUrl: committed.commitUrl, branchUrl: committed.branchUrl });
   await progress(context, 'github-commit', 'completed', { commitUrl: committed.commitUrl });
   await progress(context, 'github-pr', 'running');
+  await checkCancellation(context); context.signal.throwIfAborted();
   const pr = await context.createPullRequest(proposal.repository, branch.branch, branch.base, {
     title: `DevSphere V2: ${proposal.intent.summary.slice(0, 160)}`,
     body: `## DevSphere V2 proposal\n\n${proposal.intent.summary}\n\n**Decision:** ${proposal.decision.decision} — ${proposal.decision.reason}\n**Confidence:** ${proposal.confidence}%\n**Risk / impact:** ${proposal.risk} / ${proposal.impact}\n**QA:** ${proposal.qa.status} — ${proposal.qa.summary}\n\nReview this PR and required CI before merging.`,
@@ -56,9 +63,23 @@ async function executeChanges(context, proposal) {
   await progress(context, 'github-pr', 'completed', urls);
   return urls;
 }
-const defaults = { processIntent, plannerAgent, devAgent, qaAgent, analyzeSystem, evaluateDecision, createUniqueBranch, commitChanges, createPullRequest, appendRunEvent, createRun, updateRun, releaseRun };
+const defaults = { processIntent, plannerAgent, devAgent, qaAgent, analyzeSystem, evaluateDecision, createUniqueBranch, commitChanges, createPullRequest, appendRunEvent, createRun, updateRun, releaseRun, getRun };
+async function checkCancellation(context) {
+  const run = await context.getRun(context.runId, context.userId);
+  if (run?.cancelRequested) { context.cancelRequested = true; context.controller.abort(new Error('Run cancellation requested; inspect provider evidence before retrying.')); }
+}
+function watchCancellation(context) {
+  let reading = false;
+  const timer = setInterval(async () => {
+    if (reading) return; reading = true;
+    try { await checkCancellation(context); } catch { context.controller.abort(new Error('Cancellation state unavailable; execution stopped.')); }
+    finally { reading = false; }
+  }, 2000); timer.unref();
+  return () => clearInterval(timer);
+}
 function executionContext(dependencies, { runId, userId, emit, requestId }) {
-  return { ...dependencies, runId, userId, emit, requestId, signal: AbortSignal.timeout(boundedInteger(process.env.RUN_TIMEOUT_MS, 180_000, 5_000, 240_000)) };
+  const controller = new AbortController();
+  return { ...dependencies, runId, userId, emit, requestId, controller, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(boundedInteger(process.env.RUN_TIMEOUT_MS, 180_000, 5_000, 240_000))]) };
 }
 export function createRunDevSphere(overrides = {}) {
   const dependencies = { ...defaults, ...overrides };
@@ -68,6 +89,9 @@ export function createRunDevSphere(overrides = {}) {
     const owner = String(userId);
     const context = executionContext(dependencies, { runId, userId: owner, emit, requestId });
     await dependencies.createRun(runId, { userId: owner, input, mode, requestId, status: 'running', approval: 'not-required', proposal: null });
+    const stopWatching = watchCancellation(context);
+    const started = Date.now(); const providerMetrics = [];
+    return withProviderScope({ userId: owner, onMetric: async metric => { providerMetrics.push(metric); await dependencies.updateRun(runId, owner, { providerMetrics: providerMetrics.slice(-100) }); } }, async () => {
     const usage = [];
     const options = { signal: context.signal, onUsage: async item => { usage.push(item); await dependencies.updateRun(runId, owner, { usage }); } };
     try {
@@ -88,6 +112,7 @@ export function createRunDevSphere(overrides = {}) {
       await dependencies.updateRun(runId, owner, { qa });
       await progress(context, 'qa', qa.status, { summary: qa.summary, checkCount: qa.checks.length });
       await progress(context, 'design', 'running');
+      context.signal.throwIfAborted();
       const design = dependencies.analyzeSystem({ plan, changes: output.changes, qa });
       await progress(context, 'design', 'completed', { suggestions: design.suggestions });
       const decision = dependencies.evaluateDecision({ confidence: design.confidence, risk: design.risk, impact: design.impact, mode, qa });
@@ -106,7 +131,12 @@ export function createRunDevSphere(overrides = {}) {
     } catch (error) {
       await recordFailure(context, error);
       throw error;
-    } finally { await dependencies.releaseRun(runId, owner).catch(() => null); }
+    } finally {
+      stopWatching();
+      await dependencies.updateRun(runId, owner, { durationMs: Date.now() - started }).catch(() => null);
+      await dependencies.releaseRun(runId, owner).catch(() => null);
+    }
+    });
   };
 }
 export const runDevSphere = createRunDevSphere();
@@ -116,8 +146,11 @@ export function createExecuteApprovedRun(overrides = {}) {
     if (run.userId !== String(userId)) throw new Error('This run does not belong to this user.');
     const context = executionContext(dependencies, { runId: run.id, userId: String(userId), emit, requestId: run.requestId });
     const proposal = run.proposal;
+    const stopWatching = watchCancellation(context);
+    const providerMetrics = [...(run.providerMetrics || [])];
+    return withProviderScope({ userId: String(userId), onMetric: async metric => { providerMetrics.push(metric); await dependencies.updateRun(run.id, String(userId), { providerMetrics: providerMetrics.slice(-100) }); } }, async () => {
     try {
-    if (run.status !== 'executing' || run.approval !== 'approved' || run.approvalRecord?.userId !== String(userId) || !proposal || run.approvalHash !== proposalHash(proposal) || run.approvalRecord.approvalHash !== run.approvalHash || run.decision?.decision !== 'ask' || run.qa?.status !== 'passed' || proposal.qa?.status !== 'passed') throw new Error('This exact proposal is not eligible for approval execution.');
+    if (run.status !== 'executing' || run.approval !== 'approved' || run.approvalRecord?.userId !== String(userId) || !proposal || run.approvalHash !== proposalHash(proposal) || run.approvalRecord.approvalHash !== run.approvalHash || run.decision?.decision !== 'ask' || !hasMandatoryQA(run.qa) || !hasMandatoryQA(proposal.qa)) throw new Error('This exact proposal is not eligible for approval execution.');
     const policy = dependencies.evaluateDecision({ confidence: proposal.confidence, risk: proposal.risk, impact: proposal.impact, mode: proposal.mode, qa: proposal.qa });
     if (policy.decision !== 'ask' || proposal.decision.decision !== policy.decision) throw new Error('Server policy no longer permits approval execution.');
     return { runId: run.id, status: 'pull_request', ...await executeChanges(context, proposal) };
@@ -125,8 +158,10 @@ export function createExecuteApprovedRun(overrides = {}) {
       if (run.status === 'executing' && run.approval === 'approved') await recordFailure(context, error);
       throw error;
     } finally {
+      stopWatching();
       if (run.status === 'executing' && run.approval === 'approved') await dependencies.releaseRun(run.id, String(userId)).catch(() => null);
     }
+    });
   };
 }
 export const executeApprovedRun = createExecuteApprovedRun();
