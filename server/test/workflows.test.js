@@ -196,3 +196,19 @@ test('an ambiguous branch-create response records its candidate branch as unknow
   const record = await getRun(result.body.runId, 'user-a'); assert.equal(record.executionState, 'unknown'); assert.ok(record.branch.startsWith('devsphere/')); assert.equal(record.pullRequest, undefined);
   assert.equal(app.providers.calls.filter(call => call.path.endsWith('/git/refs') && call.method === 'POST').length, 1);
 });
+
+test('CI refresh endpoints enforce authentication, owner/operator scope and distributed cooldown', async t => {
+  const app = await workflow(t);
+  const { body: { runId } } = await app.start('assisted');
+  assert.equal((await app.request(`/runs/${runId}/checks`)).body.ci.state, 'missing');
+  assert.equal((await app.request(`/runs/${runId}/checks`, { user: null })).status, 401);
+  assert.equal((await app.request(`/runs/${runId}/checks`, { user: 'user-b' })).status, 404);
+  assert.equal((await app.request(`/runs/${runId}/checks/refresh`, { user: 'outsider', body: {} })).status, 403);
+  assert.equal((await app.request(`/runs/${runId}/checks/refresh`, { user: 'user-b', body: {} })).status, 404);
+  const writes = app.mutations().length;
+  const refreshed = await app.request(`/runs/${runId}/checks/refresh`, { body: {} });
+  assert.equal(refreshed.status, 200); assert.equal(refreshed.body.ci.state, 'successful');
+  assert.equal((await app.request(`/runs/${runId}/checks/refresh`, { body: {} })).status, 429);
+  assert.equal(app.mutations().length, writes);
+  assert.ok((await getRun(runId, 'user-a')).events.some(e => e.step === 'github-checks'));
+});

@@ -19,7 +19,7 @@ async function progress(context, step, status, detail = {}) {
 }
 async function recordFailure(context, error) {
   const message = safeMessage(error);
-  await context.updateRun(context.runId, context.userId, { status: 'failed', error: message, errorCode: error.code || 'RUN_FAILED' }).catch(() => null);
+  await context.updateRun(context.runId, context.userId, { status: 'failed', error: message, errorCode: error.code || 'RUN_FAILED', ...(error.ambiguous ? { executionState: 'unknown', recovery: 'Inspect the recorded branch and provider before any manual retry. No automatic write retry is permitted.', ...(error.candidatePull ? { candidatePull: error.candidatePull } : {}) } : {}) }).catch(() => null);
   await progress(context, 'orchestrator', 'failed', { message }).catch(() => null);
   error.runId = context.runId;
 }
@@ -52,7 +52,7 @@ async function executeChanges(context, proposal) {
     expectedHeadSha: committed.commitSha, expectedBaseSha: branch.baseSha, signal: context.signal
   });
   const urls = { branch: branch.branch, branchUrl: branch.url, commitUrl: committed.commitUrl, pullRequest: pr.url, pullNumber: pr.number, commitSha: committed.commitSha };
-  await context.updateRun(context.runId, context.userId, { status: 'pull_request', ...urls, executionError: null });
+  await context.updateRun(context.runId, context.userId, { status: 'pull_request', ...urls, repository: proposal.repository, baseBranch: branch.base, ci: { repository: proposal.repository, pullNumber: pr.number, expectedHeadSha: committed.commitSha, headSha: committed.commitSha, latestCommitSha: committed.commitSha, baseBranch: branch.base, state: 'missing', passed: false, reason: 'Refresh actual GitHub checks for this PR head.' }, executionError: null });
   await progress(context, 'github-pr', 'completed', urls);
   return urls;
 }

@@ -156,3 +156,35 @@ export async function syncProjectConfiguration(projectId, configuration) {
   return true;
 }
 export default { logData, logEvent, getPastFixes, syncProjectConfiguration, saveToLearningSystem, createRun, updateRun, getRun, listRuns, appendRunEvent, claimRunApproval, rejectRunApproval, configureFirestore };
+
+// Cross-instance refresh lease: claims reserve API budget and immediately
+// invalidate old success. A crashed refresh can never leave success displayed.
+export async function claimCheckRefresh(runId, userId) {
+  const ref = runRef(runId);
+  return requireDb().runTransaction(async transaction => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists || snap.data().userId !== userId) return null;
+    const run = snap.data();
+    if (!run.pullNumber || !run.commitSha || run.checkRefreshAfter > Date.now()) return null;
+    const generation = (run.checkGeneration || 0) + 1;
+    const patch = { checkGeneration: generation, checkRefreshAfter: Date.now() + 60_000, ci: { ...(run.ci || {}), state: 'stale', passed: false, reason: 'Refresh in progress or interrupted.' }, updatedAt: now() };
+    transaction.update(ref, patch);
+    return { ...run, ...patch, id: snap.id };
+  });
+}
+export async function recordCheckRefresh(runId, userId, generation, ci) {
+  const ref = runRef(runId);
+  return requireDb().runTransaction(async transaction => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists || snap.data().userId !== userId || snap.data().checkGeneration !== generation) return null;
+    const run = snap.data();
+    if (ci.repository !== run.proposal?.repository || ci.pullNumber !== run.pullNumber || ci.expectedHeadSha !== run.commitSha) throw new Error('CI result binding mismatch.');
+    const event = redact({ runId, step: 'github-checks', status: ci.state, at: now(), detail: { repository: ci.repository, pullNumber: ci.pullNumber, headSha: ci.headSha, expectedHeadSha: ci.expectedHeadSha } });
+    const { checkedAt, ...state } = ci;
+    const fingerprint = proposalHash(state);
+    const changed = run.lastCheckFingerprint !== fingerprint;
+    const patch = { ci: redact(ci), lastCheckFingerprint: fingerprint, updatedAt: now(), ...(changed ? { events: eventList(run, event) } : {}) };
+    boundedDocument({ ...run, ...patch }); transaction.update(ref, patch);
+    return { ci: patch.ci, event: changed ? event : null };
+  });
+}

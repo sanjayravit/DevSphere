@@ -81,12 +81,13 @@ export function mockProviders(t, configuration = {}) {
     }
     if (path === '/pulls' && method === 'POST') {
       const number = pulls.size + 1;
-      const pull = { number, html_url: `https://github.com/example/project/pull/${number}`, state: 'open', merged: false, base: { ref: body.base, repo: { full_name: 'example/project' } }, head: { ref: body.head, sha: branches.get(body.head) } };
+      const pull = { number, html_url: `https://github.com/example/project/pull/${number}`, state: 'open', merged: false, base: { ref: body.base, repo: { full_name: 'example/project' } }, head: { repo: { full_name: 'example/project' }, ref: body.head, sha: branches.get(body.head) } };
       pulls.set(number, pull); return json(pull, 201);
     }
     if (/^\/pulls\/\d+$/.test(path)) return pulls.has(Number(path.split('/').at(-1))) ? json(pulls.get(Number(path.split('/').at(-1)))) : json({ message: 'Not Found' }, 404);
+    if (path.startsWith('/rules/branches/')) return json([]);
     if (path.includes('/protection/required_status_checks')) return json({ contexts: ['validate'], checks: [{ context: 'validate', app_id: 15368 }] });
-    if (path.endsWith('/check-runs')) return json({ check_runs: [{ id: 1, name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'success', started_at: '2026-10-31T00:00:00Z' }] });
+    if (path.endsWith('/check-runs')) return json({ check_runs: [{ id: 1, head_sha: path.split('/')[2], name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'success', started_at: '2026-10-31T00:00:00Z' }] });
     if (path.endsWith('/statuses')) return json([]);
     throw new Error(`Unexpected mock GitHub request: ${method} ${path}`);
   };

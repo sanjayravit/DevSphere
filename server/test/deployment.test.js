@@ -36,7 +36,7 @@ async function deploymentWorkflow(t, configuration = {}) {
 }
 
 for (const scenario of ['unmerged', 'wrong default branch', 'wrong repository', 'untracked head', 'default branch advanced', 'missing credentials', 'repository ID mismatch', 'deployment not enabled', 'failed CI', 'missing CI configuration']) test(`WORKFLOW 6 / deployment is skipped, NOT successful: ${scenario}`, async t => {
-  const configuration = scenario === 'failed CI' ? { github: (call, state) => call.path.endsWith('/check-runs') ? state.json({ check_runs: [{ id: 1, name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'failure' }] }) : null } : scenario === 'missing CI configuration' ? { github: (call, state) => call.path.includes('/protection/') ? state.json({ message: 'Not Found' }, 404) : null } : {};
+  const configuration = scenario === 'failed CI' ? { github: (call, state) => call.path.endsWith('/check-runs') ? state.json({ check_runs: [{ id: 1, head_sha: call.path.split('/').at(-2), name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'failure' }] }) : null } : scenario === 'missing CI configuration' ? { github: (call, state) => call.path.includes('/protection/') ? state.json({ message: 'Not Found' }, 404) : null } : {};
   const app = await deploymentWorkflow(t, configuration);
   if (scenario === 'unmerged') app.pull.merged = false;
   if (scenario === 'wrong default branch') app.pull.base.ref = 'release';

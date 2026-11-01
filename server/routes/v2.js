@@ -3,8 +3,9 @@ import { timingSafeEqual } from 'node:crypto';
 import { rateLimit } from '../middleware/rateLimit.js';
 import auth, { requireRepositoryOperator } from '../middleware/auth.js';
 import { runDevSphere, executeApprovedRun } from '../engines/orchestrator.js';
+import { getPullRequestChecks } from '../services/githubService.js';
 import { deployAgent } from '../agents/deployAgent.js';
-import { appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun } from '../services/firebaseService.js';
+import { claimCheckRefresh, recordCheckRefresh, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun } from '../services/firebaseService.js';
 import { proposalHash, safeMessage } from '../utils/security.js';
 import { emitRoomEvent } from '../sockets/socketHandler.js';
 export { authenticateSocket } from '../sockets/authenticateSocket.js';
@@ -20,7 +21,7 @@ function respondError(res, error) {
 }
 const validHash = hash => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash);
 export function createV2Router(overrides = {}) {
-  const services = { runDevSphere, executeApprovedRun, deployAgent, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun, ...overrides };
+  const services = { getPullRequestChecks, runDevSphere, executeApprovedRun, deployAgent, claimCheckRefresh, recordCheckRefresh, appendRunEvent, claimRunApproval, rejectRunApproval, claimRunDeployment, getRun, listRuns, updateRun, ...overrides };
   const router = express.Router();
   router.use(auth, rateLimit({ limit: 120 }));
   router.param('runId', (req, res, next, runId) => /^[A-Za-z0-9_-]{1,128}$/.test(runId) ? next() : res.status(400).json({ error: 'Invalid run ID.' }));
@@ -43,6 +44,25 @@ export function createV2Router(overrides = {}) {
       const run = await services.getRun(req.params.runId, req.user.id);
       if (!run) return res.status(404).json({ error: 'Run not found.' });
       res.json({ run });
+    } catch (error) { respondError(res, error); }
+  });
+  router.get('/runs/:runId/checks', async (req, res) => {
+    try {
+      const run = await services.getRun(req.params.runId, req.user.id);
+      if (!run) return res.status(404).json({ error: 'Run not found.' });
+      res.json({ ci: run.ci || { state: 'missing', passed: false } });
+    } catch (error) { respondError(res, error); }
+  });
+  router.post('/runs/:runId/checks/refresh', requireRepositoryOperator, async (req, res) => {
+    try {
+      if (!await services.getRun(req.params.runId, req.user.id)) return res.status(404).json({ error: 'Run not found.' });
+      const run = await services.claimCheckRefresh(req.params.runId, req.user.id);
+      if (!run) return res.status(429).set('Retry-After', '60').json({ error: 'No tracked PR or refresh is limited to once per minute.' });
+      const ci = await services.getPullRequestChecks(run.proposal.repository, run.pullNumber, run.commitSha, { signal: AbortSignal.timeout(30_000) });
+      const stored = await services.recordCheckRefresh(run.id, req.user.id, run.checkGeneration, ci);
+      if (!stored) return res.status(409).json({ error: 'A newer refresh superseded this result.' });
+      if (stored.event) { try { makeEmitter(req, req.user.id)(stored.event); } catch { /* persisted history is authoritative */ } }
+      res.json({ ci: stored.ci });
     } catch (error) { respondError(res, error); }
   });
   router.post('/runs/:runId/approve', requireRepositoryOperator, async (req, res) => {

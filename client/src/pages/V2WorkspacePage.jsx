@@ -86,7 +86,7 @@ export const V2WorkspacePage = () => {
       if (event.runId !== activeId.current) return;
       setLiveEvents(previous => [...previous.filter(item => !(item.at === event.at && item.step === event.step && item.status === event.status)), event].slice(-100));
       if (event.status === 'failed') setError(event.detail?.message || 'The run failed. Inspect the recorded history before retrying.');
-      if (['decision', 'approval', 'github-pr', 'orchestrator', 'deployment'].includes(event.step) && event.status !== 'running') refreshActive();
+      if (['decision', 'approval', 'github-pr', 'github-checks', 'orchestrator', 'deployment'].includes(event.step) && event.status !== 'running') refreshActive();
     });
     return () => { socket.disconnect(); setConnected(false); };
   }, [token, refreshHistory, fetchDetails]);
@@ -203,7 +203,7 @@ export const V2WorkspacePage = () => {
 
         {proposal?.qa && <Panel title="QA results" icon={proposal.qa.status === 'passed' ? Check : ShieldAlert} action={<span className={`text-xs font-semibold uppercase ${statusColor(proposal.qa.status)}`}>{proposal.qa.status}</span>}>
           <p className="mb-3 text-xs leading-5 text-slate-400">{proposal.qa.summary}</p><div className="space-y-2">{proposal.qa.checks?.map((check, index) => <div key={`${check.path}-${index}`} className="flex items-start gap-2 rounded-lg bg-black/20 p-2.5 text-xs"><span className={statusColor(check.status)}>{check.status === 'passed' ? '✓' : check.status === 'failed' ? '×' : '!'}</span><div className="min-w-0"><code className="break-all text-slate-200">{check.path}</code><span className="mx-2 text-slate-600">·</span><span className="text-slate-400">{check.type}: {check.message}</span></div></div>)}</div>
-          <p className="mt-3 text-[10px] text-slate-500">Repository tests/builds executed: {proposal.qa.executedTests?.length ? proposal.qa.executedTests.join(', ') : 'none (static review only)'}</p>
+          <p className="mt-3 text-[10px] text-slate-500">Repository tests/builds executed: {proposal.qa.executedTests?.length ? proposal.qa.executedTests.map(command => typeof command === 'string' ? command : `${command.argv?.join(' ')} (exit ${command.exitCode})`).join(', ') : 'none (static review only)'}</p>
         </Panel>}
       </div>
 
@@ -211,6 +211,15 @@ export const V2WorkspacePage = () => {
         <Panel title="Orchestrator timeline" icon={Workflow} action={<span className="text-[10px] text-slate-500">{currentEvents.length} events</span>}>
           {currentEvents.length ? <ol className="relative ml-2 space-y-0 border-l border-white/10 pl-5">{currentEvents.map((event, index) => <li key={`${event.at || ''}-${event.step}-${index}`} className="relative pb-5 last:pb-0"><span className={`absolute -left-[25px] top-1 h-2 w-2 rounded-full ring-4 ring-[#11141e] ${event.status === 'failed' ? 'bg-rose-400' : event.status === 'running' ? 'bg-cyan-300' : 'bg-indigo-300'}`} /><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold capitalize text-slate-200">{event.step?.replaceAll('-', ' ')}</span><span className={`text-[10px] uppercase ${statusColor(event.status)}`}>{event.status}</span></div><div className="mt-1 text-[10px] text-slate-500">{dateText(event.at)}</div>{event.detail?.message && <p className="mt-1 text-[11px] text-slate-400">{event.detail.message}</p>}</li>)}</ol> : <p className="text-xs text-slate-500">Agent progress appears here for this run.</p>}
         </Panel>
+
+        {active.pullNumber && <Panel title="GitHub CI · recorded evidence" icon={Workflow} action={<button disabled={actionLoading} onClick={() => act('checks/refresh')} className="text-xs text-indigo-300 disabled:opacity-50">{actionLoading ? 'Refreshing…' : 'Refresh checks'}</button>}>
+          <p className={`text-sm font-semibold ${statusColor(active.ci?.state)}`}>{(active.ci?.state || 'missing').replaceAll('_', ' ')}</p>
+          <p className="mt-2 break-all text-xs text-slate-400">{active.ci?.repository || proposal?.repository} · PR #{active.pullNumber} · Head {active.ci?.headSha || active.commitSha}</p>
+          <p className="mt-1 text-xs text-slate-500">{active.ci?.checkedAt ? `Observed ${dateText(active.ci.checkedAt)}` : 'Not yet refreshed'} · At most once per minute</p>
+          {active.ci?.reason && <p className="mt-2 text-xs text-amber-200">{active.ci.reason}</p>}
+          <ul className="mt-3 space-y-2 text-xs">{active.ci?.observed?.map(check => <li key={`${check.source}:${check.id}`} className="rounded bg-black/20 p-2"><b>{check.name}</b> · {check.conclusion || check.status}<p className="mt-1 text-slate-400">{check.summary}</p>{check.url && <a href={check.url} target="_blank" rel="noreferrer" className="text-indigo-300">Open actual check ↗</a>}</li>)}</ul>
+          <p className="mt-3 text-xs text-slate-500">Checks passing never approves, merges or deploys this PR. A changed head invalidates this run’s delivery authorization. Refresh is read-only at GitHub.</p>
+        </Panel>}
 
         <Panel title="Repository delivery" icon={GitCommitHorizontal}>
           <div className="space-y-3 text-xs">
