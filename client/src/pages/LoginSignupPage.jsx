@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
+import { errorMessage } from '../utils/errorMessage';
 import { githubOAuthStartUrl, consumeGithubOAuthFragment } from '../services/githubOAuth';
 import { useAuth } from '../context/AuthContext';
 import { AnimatedCard } from '../components/ui/Card';
@@ -29,23 +30,19 @@ export const LoginSignupPage = () => {
         try {
             const token = consumeGithubOAuthFragment();
             if (token) acceptBackendToken(token).then(() => navigate('/dashboard', { replace: true })).catch(() => setError('OAuth session was invalid or expired.'));
-        } catch (failure) { setError(failure.message); }
+        } catch (failure) { setError(errorMessage(failure, 'OAuth sign-in failed.')); }
     }, [acceptBackendToken, navigate]);
 
     const getErrorMessage = (err) => {
-        let msg = err.response?.data?.error || err.message || 'Authentication failed. Please try again.';
-        if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        let msg = errorMessage(err, 'Authentication failed. Please try again.');
+        if (['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found'].includes(err?.code)) {
             msg = 'Incorrect email or password.';
-        } else if (err.code === 'auth/email-already-in-use') {
+        } else if (err?.code === 'auth/email-already-in-use') {
             msg = 'An account with this email already exists.';
-        } else if (err.code === 'auth/popup-closed-by-user') {
+        } else if (err?.code === 'auth/popup-closed-by-user') {
             msg = 'The sign-in popup was closed before completing.';
-        } else if (err.code === 'auth/account-exists-with-different-credential') {
+        } else if (err?.code === 'auth/account-exists-with-different-credential') {
             msg = 'This email is already associated with another sign-in method. Please log in using that method.';
-        }
-
-        if (err.response?.data?.details) {
-            msg += ` (Details: ${err.response.data.details})`;
         }
 
         return msg;
@@ -134,7 +131,7 @@ export const LoginSignupPage = () => {
                         animate={{ opacity: 1, y: 0 }}
                         className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm text-center"
                     >
-                        {error || authError}
+                        {errorMessage(error || authError, 'Authentication failed. Please try again.')}
                     </motion.div>
                 )}
 

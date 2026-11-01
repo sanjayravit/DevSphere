@@ -8,6 +8,7 @@ import auth from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { getSessionSecret, signSession } from '../config/session.js';
 import firebaseAdmin from '../firebaseAdmin.js';
+import { respondAuthSyncError } from '../utils/authSyncError.js';
 
 const router = express.Router();
 const checkDb = (_req, res, next) => {
@@ -102,26 +103,33 @@ router.post('/user', rateLimit({ limit: 60 }), async (req, res) => {
   if (typeof req.body?.idToken !== 'string' || !req.body.idToken || req.body.idToken.length > 8_192) return res.status(400).json({ error: 'A valid idToken is required.' });
   if (!firebaseAdmin.admin.apps.length || !firebaseAdmin.db) return res.status(503).json({ error: 'Firebase Admin is not configured.' });
   try { getSessionSecret(); } catch { return res.status(503).json({ error: 'Session signing is not configured.' }); }
+  let stage = 'verify-token';
   try {
     const decoded = await firebaseAdmin.admin.auth().verifyIdToken(req.body.idToken, true);
     if (typeof decoded.uid !== 'string' || !validEmail(decoded.email)) return res.status(400).json({ error: 'This sign-in method must provide an email address.' });
     const { uid, email, name, picture } = decoded;
+    stage = 'read-profile';
     let user = await User.findById(uid);
     if (!user) {
       const profile = { username: String(name || req.body.name || email.split('@')[0]).slice(0, 80), email, name: String(name || req.body.name || '').slice(0, 100), avatar: picture || '', authProvider: 'firebase', createdAt: new Date(), updatedAt: new Date() };
       // create() prevents a concurrent sign-in from overwriting an existing profile.
+      stage = 'create-profile';
       try { await firebaseAdmin.db.collection('users').doc(uid).create(profile); }
       catch (error) { if (error.code !== 6 && error.code !== 'already-exists') throw error; }
+      stage = 'read-profile';
       user = await User.findById(uid);
     }
+    if (!user) throw new Error('Synchronized profile is not available.');
     if (!user.name && (name || typeof req.body.name === 'string')) {
       const displayName = String(name || req.body.name).slice(0, 100);
+      stage = 'update-profile';
       await User.update(uid, { name: displayName, username: displayName });
       user = { ...user, name: displayName, username: displayName };
     }
+    stage = 'sign-session';
     res.json({ token: signSession(uid), user: publicUser(user) });
   } catch (error) {
-    res.status(error.code?.startsWith('auth/') ? 401 : 503).json({ error: error.code?.startsWith('auth/') ? 'Invalid, expired or revoked Firebase token.' : 'Authentication synchronization is temporarily unavailable.' });
+    respondAuthSyncError(res, error, stage);
   }
 });
 export default router;

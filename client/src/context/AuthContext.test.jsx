@@ -103,3 +103,16 @@ it('cross-tab validation never removes the other tab\'s valid token while the ne
   expect(localStorage.getItem('token')).toBe('mock-other-tab');
   await act(async () => { response.resolve({ data: { id: 'other-owner' } }); }); expect(session.user.id).toBe('other-owner');
 });
+
+it('structured backend sync errors remain strings and cannot establish a session', async () => {
+  await ready(); const user = firebaseUser('user-a');
+  firebase.signInWithEmailAndPassword.mockImplementation(async () => { state.auth.currentUser = user; return { user }; });
+  api.post.mockRejectedValue({ response: { status: 500, data: { error: { code: 'INTERNAL', message: 'Sync is unavailable.' } } } });
+  await act(async () => { await expect(session.login('a@example.com', 'test-password')).rejects.toBeDefined(); });
+  expect(session.authError).toBe('Sync is unavailable.'); expect(session.user).toBeNull(); expect(session.token).toBeNull(); expect(localStorage.getItem('token')).toBeNull();
+});
+it('initial Firebase synchronization failure preserves a renderable context error', async () => {
+  state.auth.currentUser = firebaseUser('user-a');
+  api.post.mockRejectedValue({ response: { data: { error: { code: 'UNAVAILABLE', message: 'Try again later.' } } } });
+  await ready(); expect(session.authError).toBe('Try again later.'); expect(session.user).toBeNull();
+});

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
+import { errorMessage } from '../utils/errorMessage';
 import { auth, googleProvider, githubProvider, firebaseConfigurationError } from '../firebase';
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onIdTokenChanged, fetchSignInMethodsForEmail, linkWithCredential, GithubAuthProvider, updateProfile } from 'firebase/auth';
 
@@ -59,7 +60,7 @@ export const AuthProvider = ({ children }) => {
       } catch (error) {
         if (mounted && generation === version.current) {
           setSession(null, null);
-          setAuthError(error.response?.data?.error || error.message || 'Sign-in synchronization failed.');
+          setAuthError(errorMessage(error, 'Sign-in synchronization failed.'));
         }
       } finally { if (mounted && generation === version.current) setLoading(false); }
     };
@@ -78,7 +79,7 @@ export const AuthProvider = ({ children }) => {
       sessionSource.current = 'logged-out'; syncs.current.clear(); setSession(null, null, { persist: false }); setLoading(true);
       try { if (candidate) await validateBackendToken(candidate, generation); }
       catch (error) {
-        if (generation === version.current) { setSession(null, null); setAuthError(error.response?.data?.error || 'The session in another tab is invalid.'); }
+        if (generation === version.current) { setSession(null, null); setAuthError(errorMessage(error, 'The session in another tab is invalid.')); }
       } finally {
         if (generation === version.current) setLoading(false);
         if (activeAction.current === operation) activeAction.current = null;
@@ -99,7 +100,7 @@ export const AuthProvider = ({ children }) => {
       return await syncUser(fbUser, name, generation);
     } catch (error) {
       if (generation === version.current) {
-        sessionSource.current = 'logged-out'; setSession(null, null); setAuthError(error.response?.data?.error || error.message || 'Sign-in synchronization failed.');
+        sessionSource.current = 'logged-out'; setSession(null, null); setAuthError(errorMessage(error, 'Sign-in synchronization failed.'));
         if (auth.currentUser) await signOut(auth).catch(() => {});
       }
       throw error;
@@ -134,7 +135,7 @@ export const AuthProvider = ({ children }) => {
       if (auth?.currentUser) await signOut(auth);
       return await validateBackendToken(candidate, generation);
     } catch (error) {
-      if (generation === version.current) { setSession(null, null); setAuthError(error.response?.data?.error || error.message); }
+      if (generation === version.current) { setSession(null, null); setAuthError(errorMessage(error, 'Sign-in synchronization failed.')); }
       throw error;
     } finally { if (activeAction.current === operation) activeAction.current = null; }
   }, [setSession, validateBackendToken]);
