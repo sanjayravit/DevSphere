@@ -1,3 +1,4 @@
+import { mockSandboxRun } from './helpers/qa.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -17,7 +18,7 @@ async function deploymentWorkflow(t, configuration = {}) {
   const providers = mockProviders(t, configuration);
   environment(t, { VERCEL_API_TOKEN: 'test-only-vercel-credential', VERCEL_PROJECT_ID: 'prj_test', VERCEL_GITHUB_REPO_ID: '12345', ENABLE_PRODUCTION_DEPLOYMENTS: 'true' });
   const database = fakeFirestore(); configureFirestore(database);
-  const app = express(); app.use(express.json()); app.use('/v2', createV2Router(configuration.routes));
+  const app = express(); app.use(express.json()); app.use('/v2', createV2Router({ runDevSphere: mockSandboxRun, ...configuration.routes }));
   const server = http.createServer(app); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); configureFirestore(null); });
   const post = async (path, body, user = 'user-a') => {
@@ -35,7 +36,7 @@ async function deploymentWorkflow(t, configuration = {}) {
 }
 
 for (const scenario of ['unmerged', 'wrong default branch', 'wrong repository', 'untracked head', 'default branch advanced', 'missing credentials', 'repository ID mismatch', 'deployment not enabled', 'failed CI', 'missing CI configuration']) test(`WORKFLOW 6 / deployment is skipped, NOT successful: ${scenario}`, async t => {
-  const configuration = scenario === 'failed CI' ? { github: (call, state) => call.path.endsWith('/check-runs') ? state.json({ check_runs: [{ id: 1, name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'failure' }] }) : null } : scenario === 'missing CI configuration' ? { github: (call, state) => call.path.includes('/protection/') ? state.json({ message: 'Not Found' }, 404) : null } : {};
+  const configuration = scenario === 'failed CI' ? { github: (call, state) => call.path.endsWith('/check-runs') ? state.json({ check_runs: [{ id: 1, head_sha: call.path.split('/').at(-2), name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'failure' }] }) : null } : scenario === 'missing CI configuration' ? { github: (call, state) => call.path.includes('/protection/') ? state.json({ message: 'Not Found' }, 404) : null } : {};
   const app = await deploymentWorkflow(t, configuration);
   if (scenario === 'unmerged') app.pull.merged = false;
   if (scenario === 'wrong default branch') app.pull.base.ref = 'release';

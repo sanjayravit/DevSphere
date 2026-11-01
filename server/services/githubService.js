@@ -1,6 +1,7 @@
+import { observedFetch } from './providerTelemetry.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { boundedInteger, containsCredential, ServiceError } from '../utils/security.js';
+import { boundedInteger, containsCredential, redact, ServiceError } from '../utils/security.js';
 import { validateRepositoryPath, validateChanges } from '../utils/repositorySafety.js';
 export { validateRepositoryPath } from '../utils/repositorySafety.js';
 
@@ -25,11 +26,12 @@ async function request(path, { signal, ...options } = {}) {
     let response;
     try {
       const timeout = AbortSignal.timeout(boundedInteger(process.env.GITHUB_TIMEOUT_MS, 15_000, 1_000, 30_000));
-      response = await fetch(`${apiBase}${path}`, {
-        ...options, signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      response = await observedFetch('github', `${apiBase}${path}`, {
+        ...options, redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${process.env.GITHUB_TOKEN}`, 'X-GitHub-Api-Version': '2022-11-28', ...(options.body ? { 'Content-Type': 'application/json' } : {}) }
-      });
+      }, attempt);
     } catch (error) {
+      if (error.code === 'PROVIDER_QUOTA') throw error;
       if (attempt < retries && !signal?.aborted) { await delay(100 * (attempt + 1), undefined, { signal }); continue; }
       throw new ServiceError('GitHub request timed out, was canceled, or could not reach the service.', { code: 'GITHUB_NETWORK_ERROR', ambiguous: options.method && options.method !== 'GET' });
     }
@@ -187,7 +189,7 @@ export async function createPullRequest(repo, branch, base, options = {}) {
   if (options.expectedHeadSha && await getBranchHead(repo, branch, { signal: options.signal }) !== options.expectedHeadSha) throw conflict('Feature branch changed before PR creation.');
   if (options.expectedBaseSha && await getBranchHead(repo, info.defaultBranch, { signal: options.signal }) !== options.expectedBaseSha) throw conflict('Default branch advanced during execution; regenerate before opening a PR.');
   const pull = await request(`/repos/${info.owner}/${info.name}/pulls`, { signal: options.signal, method: 'POST', body: JSON.stringify({ title: (options.title || 'DevSphere V2: proposed changes').slice(0, 240), body: options.body || 'Review this DevSphere proposal and required CI checks before merging.', head: branch, base: info.defaultBranch }) });
-  if (!Number.isInteger(pull.number) || !isString(pull.html_url) || pull.base?.ref !== info.defaultBranch || pull.head?.ref !== branch || pull.state !== 'open') throw invalid();
+  if (!Number.isInteger(pull.number) || !isString(pull.html_url) || pull.base?.ref !== info.defaultBranch || pull.head?.ref !== branch || pull.state !== 'open' || !isSha(pull.head?.sha) || options.expectedHeadSha && pull.head.sha !== options.expectedHeadSha || pull.base?.repo?.full_name?.toLowerCase() !== info.fullName.toLowerCase() || pull.head?.repo?.full_name?.toLowerCase() !== info.fullName.toLowerCase()) throw Object.assign(invalid(true), { candidatePull: { branch, base: info.defaultBranch, number: Number.isInteger(pull.number) ? pull.number : null } });
   return { number: pull.number, url: `${info.htmlUrl}/pull/${pull.number}`, state: pull.state, base: pull.base.ref, head: pull.head.ref };
 }
 export async function getPullRequest(repo, number, options) {
@@ -203,37 +205,105 @@ async function getPages(path, key, options) {
   for (let page = 1; page <= 10; page++) {
     const body = await request(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, options);
     const items = key ? body[key] : body;
-    if (!Array.isArray(items)) throw invalid();
+    if (!Array.isArray(items) || key && (!Number.isInteger(body.total_count) || body.total_count < 0 || items.length < 100 && body.total_count > all.length + items.length)) throw invalid();
     all.push(...items);
     if (items.length < 100) return all;
   }
   throw new ServiceError('Too many CI check records to verify safely.', { code: 'GITHUB_CHECK_LIMIT' });
 }
-export async function getRequiredChecks(repo, sha, branch, options = {}) {
-  const [owner, name] = parseRepository(repo);
-  let protection;
+const safeGithubURL = value => {
+  try { const url = new URL(value); return url.protocol === 'https:' && url.hostname === 'github.com' && !url.username && !url.password ? url.href : null; } catch { return null; }
+};
+async function requiredDefinitions(owner, name, branch, options) {
+  validateBranch(branch);
+  let protection = {};
   try { protection = await request(`/repos/${owner}/${name}/branches/${encodeURIComponent(branch)}/protection/required_status_checks`, options); }
-  catch (error) {
-    if (error.code === 'GITHUB_NOT_FOUND') return { required: [], checks: [], passed: false, configured: false, reason: 'No branch-protection required status checks could be verified.' };
-    throw error;
+  catch (error) { if (error.code !== 'GITHUB_NOT_FOUND') throw error; }
+  // Rulesets can impose requirements not visible in legacy branch protection.
+  const rules = await request(`/repos/${owner}/${name}/rules/branches/${encodeURIComponent(branch)}`, options);
+  if (!Array.isArray(rules) || protection.checks !== undefined && !Array.isArray(protection.checks) || protection.contexts !== undefined && !Array.isArray(protection.contexts)) throw invalid();
+  const definitions = (protection.checks || []).map(c => ({ name: c.context, appId: c.app_id ?? null }));
+  for (const name of protection.contexts || []) if (!definitions.some(c => c.name === name)) definitions.push({ name, appId: null });
+  for (const rule of rules) {
+    if (['workflows', 'required_deployments'].includes(rule.type)) throw new ServiceError('Additional ruleset requirements need operator verification.', { code: 'GITHUB_UNSUPPORTED_RULE' });
+    if (rule.type !== 'required_status_checks') continue;
+    if (!Array.isArray(rule.parameters?.required_status_checks)) throw invalid();
+    for (const check of rule.parameters.required_status_checks) definitions.push({ name: check.context, appId: check.integration_id ?? null });
   }
-  const definitions = (protection.checks || []).map(check => ({ name: check.context, appId: check.app_id ?? null }));
-  for (const name of protection.contexts || []) if (!definitions.some(check => check.name === name)) definitions.push({ name, appId: null });
-  if (!definitions.length || definitions.some(check => !isString(check.name))) return { required: [], checks: [], passed: false, configured: false, reason: 'Branch protection has no verifiable required checks configured.' };
-  const root = `/repos/${owner}/${name}/commits/${encodeURIComponent(sha)}`;
-  const [runs, statuses] = await Promise.all([getPages(`${root}/check-runs?filter=latest`, 'check_runs', options), getPages(`${root}/statuses`, undefined, options)]);
+  if (definitions.length > 100 || definitions.some(c => !isString(c.name) || c.name.length > 200 || c.appId !== null && !Number.isInteger(c.appId))) throw invalid();
+  return [...new Map(definitions.map(c => [`${c.name}:${c.appId}`, c])).values()];
+}
+export async function getCommitChecks(repo, sha, branch, options = {}) {
+  if (!isSha(sha)) throw invalid();
+  const [owner, name] = parseRepository(repo);
+  const root = `/repos/${owner}/${name}/commits/${sha}`;
+  // Always read actual checks, even when protection isn't visible.
+  const [runs, statuses, discovery] = await Promise.all([
+    getPages(`${root}/check-runs?filter=latest`, 'check_runs', options), getPages(`${root}/statuses`, undefined, options),
+    requiredDefinitions(owner, name, branch, options).then(definitions => ({ definitions }), error => ({ error }))
+  ]);
+  if (runs.length + statuses.length > 100) throw new ServiceError('CI evidence exceeds the bounded record limit.', { code: 'GITHUB_CHECK_LIMIT' });
+  if (runs.some(r => r.head_sha !== sha || !isString(r.name) || !Number.isInteger(r.id) || !['queued', 'in_progress', 'completed', 'waiting', 'pending', 'requested'].includes(r.status)) || statuses.some(s => !isString(s.context) || !Number.isInteger(s.id) || !['pending', 'success', 'failure', 'error'].includes(s.state))) throw invalid();
   const observed = [
-    ...runs.map(run => ({ source: 'check-run', name: run.name, status: run.status, conclusion: run.conclusion, appId: run.app?.id, id: run.id, at: run.started_at || '' })),
-    ...statuses.map(status => ({ source: 'status', name: status.context, status: status.state === 'pending' ? 'in_progress' : 'completed', conclusion: status.state, appId: null, id: status.id, at: status.created_at || '' }))
-  ].sort((a, b) => b.at.localeCompare(a.at) || (b.id || 0) - (a.id || 0));
+    ...runs.map(r => ({ source: 'check-run', name: r.name.slice(0, 200), status: r.status, conclusion: r.conclusion, appId: r.app?.id ?? null, id: r.id, at: r.started_at || '', url: safeGithubURL(r.html_url || r.details_url), summary: redact(String(r.output?.title || '').slice(0, 500)) })),
+    ...statuses.map(s => ({ source: 'status', name: s.context.slice(0, 200), status: s.state === 'pending' ? 'in_progress' : 'completed', conclusion: s.state, appId: null, id: s.id, at: s.created_at || '', url: safeGithubURL(s.target_url), summary: redact(String(s.description || '').slice(0, 500)) }))
+  ].sort((a, b) => String(b.at).localeCompare(String(a.at)) || b.id - a.id);
+  const latest = [...new Map([...observed].reverse().map(c => [`${c.source}:${c.name}:${c.appId}`, c])).values()];
+  const definitions = discovery.definitions || [];
   const checks = definitions.map(required => {
-    const matching = observed.filter(item => item.name === required.name && (required.appId == null || required.appId === -1 || item.appId === required.appId));
-    // A required legacy context that exists as BOTH a status and a check must
-    // satisfy both; a newer successful status cannot hide a failed check run.
-    const latest = [...new Map(matching.map(item => [item.source, matching.find(candidate => candidate.source === item.source)])).values()];
-    const passed = latest.length > 0 && latest.every(item => item.status === 'completed' && item.conclusion === 'success');
-    return { ...required, status: passed ? 'completed' : latest[0]?.status || 'missing', conclusion: passed ? 'success' : 'not-successful', observed: latest };
+    const matching = latest.filter(c => c.name === required.name && (required.appId == null || required.appId === -1 || c.appId === required.appId));
+    const passed = matching.length > 0 && matching.every(c => c.status === 'completed' && c.conclusion === 'success');
+    return { ...required, status: passed ? 'completed' : matching[0]?.status || 'missing', conclusion: passed ? 'success' : 'not-successful', observed: matching };
   });
-  return { required: definitions.map(check => check.name), checks, passed: checks.every(check => check.conclusion === 'success'), configured: true };
+  let state = 'successful';
+  if (discovery.error) state = 'inaccessible';
+  else if (!definitions.length || !latest.length || checks.some(c => c.status === 'missing')) state = 'missing';
+  else if (latest.some(c => ['failure', 'error', 'timed_out', 'action_required', 'startup_failure'].includes(c.conclusion))) state = 'failed';
+  else if (latest.some(c => c.conclusion === 'cancelled')) state = 'cancelled';
+  else if (latest.some(c => c.status === 'in_progress')) state = 'in_progress';
+  else if (latest.some(c => ['queued', 'pending', 'waiting', 'requested'].includes(c.status))) state = 'queued';
+  else if (checks.some(c => c.conclusion !== 'success') || latest.some(c => c.conclusion !== 'success')) state = 'missing';
+  return { repository: repo, sha, baseBranch: branch, state, required: definitions.map(c => c.name), checks, observed: latest, passed: state === 'successful', configured: !discovery.error && definitions.length > 0, ...(discovery.error ? { reason: 'Required checks/rules are inaccessible or unsupported.', errorCode: discovery.error.code } : !definitions.length ? { reason: 'No applicable required checks could be verified.' } : {}) };
+}
+export const getRequiredChecks = getCommitChecks;
+export async function getPullRequestChecks(repo, number, expectedHeadSha, options = {}) {
+  const at = new Date().toISOString();
+  let headSha = null; let baseBranch = null;
+  try {
+    const info = await getRepositoryInfo(repo, options);
+    const pull = await getPullRequest(repo, number, options);
+    if (pull.base?.repo?.full_name?.toLowerCase() !== info.fullName.toLowerCase() || pull.head?.repo?.full_name?.toLowerCase() !== info.fullName.toLowerCase() || !isSha(pull.head?.sha) || !isString(pull.base?.ref)) throw invalid();
+    headSha = pull.head.sha; baseBranch = pull.base.ref;
+    const checks = await getCommitChecks(repo, headSha, baseBranch, options);
+    // Re-read after API fan-out: a head change during refresh invalidates success.
+    const latest = await getPullRequest(repo, number, options);
+    const stale = latest.head?.sha !== headSha || headSha !== expectedHeadSha || baseBranch !== info.defaultBranch || latest.base?.ref !== baseBranch;
+    return { ...checks, pullNumber: Number(number), headSha, latestCommitSha: latest.head?.sha || null, expectedHeadSha, baseBranch, defaultBranch: info.defaultBranch, checkedAt: at, state: stale ? 'stale' : checks.state, passed: !stale && checks.passed };
+  } catch (error) {
+    return { repository: repo, pullNumber: Number(number), expectedHeadSha, headSha, baseBranch, checkedAt: at, state: 'inaccessible', passed: false, errorCode: error.code || 'GITHUB_INVALID_RESPONSE', reason: 'GitHub status could not be verified. Refresh after resolving provider access; do not retry writes.' };
+  }
 }
 export default { getDefaultBranch, getBranchHead, createBranch, createUniqueBranch, commitChanges, createPullRequest, getRepositoryInfo, getRepositoryContext, validateRepositoryPath, getPullRequest, getRequiredChecks };
+
+// Complete, immutable, bounded text snapshot for the isolated QA runner. Secret
+// paths are excluded; symlinks/submodules/binary or oversized sources fail closed.
+export async function getQASnapshot(repo, sha, options = {}) {
+  if (!isSha(sha)) throw invalid();
+  const { snapshotPath, validateSnapshot } = await import('./qa/policy.js');
+  const info = await getRepositoryInfo(repo, options);
+  const tree = await getTree(info, sha, options);
+  const files = []; let bytes = 0;
+  for (const entry of tree) {
+    if (entry.type === 'tree') continue;
+    try { snapshotPath(entry.path); } catch { continue; }
+    if (entry.type !== 'blob' || !['100644', '100755'].includes(entry.mode) || entry.size > 500_000 || files.length >= 500 || bytes + entry.size > 1_500_000) throw new ServiceError('QA snapshot is unsupported or exceeds limits.', { code: 'unsupported' });
+    const file = await getFile(info, entry.path, sha, options);
+    if (file?.encoding !== 'base64' || typeof file.content !== 'string') throw invalid();
+    const buffer = Buffer.from(file.content.replace(/\s/g, ''), 'base64');
+    if (gitBlobSha(buffer) !== entry.sha || buffer.includes(0)) throw invalid();
+    const content = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    if (containsCredential(content)) throw new Error('QA snapshot contains credential-like content.');
+    files.push({ path: entry.path, content }); bytes += buffer.length;
+  }
+  return validateSnapshot(files);
+}

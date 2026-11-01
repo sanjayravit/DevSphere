@@ -113,8 +113,8 @@ test('QA never treats an empty proposal or unchecked source type as passed, and 
   assert.equal((await qaAgent({ changes: [] })).status, 'inconclusive');
   assert.equal((await qaAgent({ changes: [{ path: 'x.py', content: 'this is not Python' }] })).status, 'inconclusive');
   assert.equal((await qaAgent({ changes: [{ path: 'x.js', content: `const key = "${'sk-' + 'x'.repeat(30)}";` }] })).status, 'failed');
-  assert.equal((await qaAgent({ changes: [{ path: 'x.tsx', content: 'export const X = () => <div>Hello</div>;' }] })).status, 'passed');
-  assert.equal((await qaAgent({ changes: [{ path: 'x.cjs', content: 'module.exports = 1;' }] })).status, 'passed');
+  assert.equal((await qaAgent({ changes: [{ path: 'x.tsx', content: 'export const X = () => <div>Hello</div>;' }] })).status, 'inconclusive');
+  assert.equal((await qaAgent({ changes: [{ path: 'x.cjs', content: 'module.exports = 1;' }] })).status, 'inconclusive');
 });
 test('design analysis cannot downgrade planner high risk or system impact, and recognizes auth context files', () => {
   const plan = { risk: 'high', impact: 'system', confidence: 90 };
@@ -124,16 +124,16 @@ test('design analysis cannot downgrade planner high risk or system impact, and r
 });
 test('required CI checks honor app identity and do not accept stale successful attempts', async t => {
   mockProviders(t, { github: (call, state) => call.path.endsWith('/check-runs') ? state.json({ check_runs: [
-    { id: 1, name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'success', started_at: '2026-01-01' },
-    { id: 2, name: 'validate', app: { id: 15368 }, status: 'in_progress', conclusion: null, started_at: '2026-10-31' },
-    { id: 3, name: 'validate', app: { id: 999 }, status: 'completed', conclusion: 'success', started_at: '2026-10-31' }
+    { head_sha: baseSha, id: 1, name: 'validate', app: { id: 15368 }, status: 'completed', conclusion: 'success', started_at: '2026-01-01' },
+    { head_sha: baseSha, id: 2, name: 'validate', app: { id: 15368 }, status: 'in_progress', conclusion: null, started_at: '2026-10-31' },
+    { head_sha: baseSha, id: 3, name: 'validate', app: { id: 999 }, status: 'completed', conclusion: 'success', started_at: '2026-10-31' }
   ] }) : null });
   assert.equal((await getRequiredChecks(undefined, baseSha, 'trunk')).passed, false);
 });
 test('a successful legacy status cannot hide a failed required check with the same context', async t => {
   mockProviders(t, { github: (call, state) => {
     if (call.path.includes('/protection/')) return state.json({ contexts: ['validate'], checks: [] });
-    if (call.path.endsWith('/check-runs')) return state.json({ check_runs: [{ id: 1, name: 'validate', status: 'completed', conclusion: 'failure', started_at: '2026-10-30' }] });
+    if (call.path.endsWith('/check-runs')) return state.json({ check_runs: [{ head_sha: baseSha, id: 1, name: 'validate', status: 'completed', conclusion: 'failure', started_at: '2026-10-30' }] });
     if (call.path.endsWith('/statuses')) return state.json([{ id: 2, context: 'validate', state: 'success', created_at: '2026-10-31' }]);
   } });
   assert.equal((await getRequiredChecks(undefined, baseSha, 'trunk')).passed, false);

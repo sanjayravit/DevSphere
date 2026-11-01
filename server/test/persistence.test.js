@@ -1,3 +1,4 @@
+import { passedQA } from './helpers/qa.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -55,7 +56,7 @@ test('concurrent execution/error events retain order, redact secrets and bound d
 });
 test('approval claims reject stale QA, stale metadata, hash changes and rejections without any execution grant', async t => {
   const database = store(t);
-  const proposal = { changes: [], repository: 'o/r', qa: { status: 'passed' } };
+  const proposal = { changes: [], repository: 'o/r', qa: passedQA };
   const hash = proposalHash(proposal);
   await createRun('approval', { userId: 'owner', status: 'pending_approval', approval: 'pending', approvalHash: hash, proposal, qa: { status: 'failed' }, decision: { decision: 'ask' } });
   assert.equal(await claimRunApproval('approval', 'owner', hash), null);
@@ -92,7 +93,7 @@ test('invalid partial Firebase configuration fails unavailable rather than crash
 test('an approval policy validation failure after a successful claim is audited as failed rather than stranding an executing run', async t => {
   store(t);
   const { createExecuteApprovedRun } = await import('../engines/orchestrator.js');
-  const proposal = { changes: [{ path: 'x.js', operation: 'create', content: 'export const x = 1;', expectedSha: null }], mode: 'approval', confidence: 95, risk: 'low', impact: 'file', qa: { status: 'passed' }, decision: { decision: 'ask' }, repository: 'example/project', baseSha: 'a'.repeat(40) };
+  const proposal = { changes: [{ path: 'x.js', operation: 'create', content: 'export const x = 1;', expectedSha: null }], mode: 'approval', confidence: 95, risk: 'low', impact: 'file', qa: passedQA, decision: { decision: 'ask' }, repository: 'example/project', baseSha: 'a'.repeat(40) };
   const hash = proposalHash(proposal);
   await createRun('claimed-failure', { userId: 'owner', status: 'pending_approval', approval: 'pending', proposal, approvalHash: hash, qa: proposal.qa, decision: proposal.decision });
   const run = await claimRunApproval('claimed-failure', 'owner', hash);
@@ -103,7 +104,7 @@ test('an approval policy validation failure after a successful claim is audited 
 
 test('different pending approvals for one owner share the same durable execution lease; another run cannot start until execution releases it', async t => {
   store(t);
-  const proposal = { changes: [], qa: { status: 'passed' } }; const hash = proposalHash(proposal);
+  const proposal = { changes: [], qa: passedQA }; const hash = proposalHash(proposal);
   for (const id of ['first', 'second']) {
     await createRun(id, { userId: 'owner', status: 'pending_approval', approval: 'pending', proposal, approvalHash: hash, qa: proposal.qa, decision: { decision: 'ask' } }); await releaseRun(id, 'owner');
   }

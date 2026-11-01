@@ -1,6 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, GithubAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || import.meta.env.REACT_APP_FIREBASE_API_KEY,
@@ -12,15 +11,13 @@ const config = {
 };
 let app = null;
 let auth = null;
-let db = null;
 let firebaseConfigurationError = '';
 try {
   if (!config.apiKey || !config.projectId || !config.authDomain || !config.appId) throw new Error('Missing Firebase browser configuration.');
   app = getApps()[0] || initializeApp(config);
   auth = getAuth(app);
-  db = getFirestore(app);
 } catch { firebaseConfigurationError = 'Firebase sign-in is not configured. Set the VITE_FIREBASE_* browser configuration and rebuild.'; }
-export { auth, db, firebaseConfigurationError };
+export { auth, firebaseConfigurationError };
 export const googleProvider = new GoogleAuthProvider();
 export const githubProvider = new GithubAuthProvider();
 export default app;

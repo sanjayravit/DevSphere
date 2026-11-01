@@ -4,13 +4,13 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const roots = ['server', 'api', 'socket-server'].map(directory => join(root, directory));
+const roots = ['server', 'api', 'socket-server', 'sandbox', 'scripts'].map(directory => join(root, directory));
 const files = [];
 function walk(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const full = join(directory, entry.name);
     if (entry.isDirectory() && !['node_modules', 'dist', 'build', 'coverage', 'git-cache', '.git'].includes(entry.name)) walk(full);
-    else if (entry.isFile() && entry.name.endsWith('.js')) files.push(full);
+    else if (entry.isFile() && /\.m?js$/.test(entry.name)) files.push(full);
   }
 }
 for (const root of roots) walk(root);

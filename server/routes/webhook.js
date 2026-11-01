@@ -1,3 +1,4 @@
+import { rateLimit } from '../middleware/rateLimit.js';
 import express from 'express';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import auth, { requireRepositoryOperator } from '../middleware/auth.js';
@@ -21,6 +22,7 @@ export function verifyWebhookSignature(req, source) {
 export function createWebhookRouter(overrides = {}) {
   const services = { getProjectForUser, findProject: Project.findById, findWorkspace: Workspace.findById, saveProject: Project.save, requireDb, recordProjectEvent, emitRoomEvent, ...overrides };
   const router = express.Router();
+  router.use(rateLimit({ limit: 120 }));
   router.get('/history', auth, async (req, res) => {
     try {
       const scope = req.query.scope || 'project';

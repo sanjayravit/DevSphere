@@ -1,3 +1,4 @@
+import { mockSandboxRun } from './helpers/qa.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -19,7 +20,7 @@ const waitEvent = (socket, event) => new Promise((resolve, reject) => {
 async function runtime(t) {
   mockProviders(t);
   const database = fakeFirestore(); configureFirestore(database);
-  const api = express(); api.use(express.json()); api.use('/v2', createV2Router());
+  const api = express(); api.use(express.json()); api.use('/v2', createV2Router({ runDevSphere: mockSandboxRun }));
   const server = http.createServer(api);
   const io = createSocketServer(server, { getProjectForUser: async (id, userId) => {
     if (id !== 'shared-project' || !['user-a', 'user-b'].includes(userId)) throw new Error('No access');

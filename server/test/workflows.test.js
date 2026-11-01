@@ -1,3 +1,4 @@
+import { mockSandboxRun } from './helpers/qa.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -14,7 +15,7 @@ const { createApp } = await import('../server.js');
 async function workflow(t, configuration = {}, overrides = {}) {
   const providers = mockProviders(t, configuration);
   const firestore = fakeFirestore(); configureFirestore(firestore);
-  const server = http.createServer(createApp({ v2: createV2Router(overrides) }));
+  const server = http.createServer(createApp({ v2: createV2Router({ runDevSphere: mockSandboxRun, ...overrides }) }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); configureFirestore(null); });
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -32,7 +33,8 @@ test('WORKFLOW 1 / Manual: HTTP intent → OpenAI → pinned context → plan �
   const result = await app.start('manual');
   assert.equal(result.status, 200); assert.equal(result.body.status, 'suggested');
   assert.equal(result.body.decision.decision, 'suggest'); assert.equal(result.body.qa.status, 'passed');
-  assert.deepEqual(result.body.qa.executedTests, []);
+  assert.equal(result.body.qa.execution.evidenceSource, 'mock');
+  assert.equal(result.body.qa.executedTests[0].exitCode, 0);
   assert.equal(app.providers.aiCalls.length, 3); assert.equal(app.mutations().length, 0);
   const stored = (await app.request(`/runs/${result.body.runId}`)).body.run;
   assert.ok(stored.intent.acceptanceCriteria.length); assert.ok(stored.plan.tasks.length);
@@ -193,4 +195,29 @@ test('an ambiguous branch-create response records its candidate branch as unknow
   const result = await app.start('assisted'); assert.equal(result.status, 502);
   const record = await getRun(result.body.runId, 'user-a'); assert.equal(record.executionState, 'unknown'); assert.ok(record.branch.startsWith('devsphere/')); assert.equal(record.pullRequest, undefined);
   assert.equal(app.providers.calls.filter(call => call.path.endsWith('/git/refs') && call.method === 'POST').length, 1);
+});
+
+test('CI refresh endpoints enforce authentication, owner/operator scope and distributed cooldown', async t => {
+  const app = await workflow(t);
+  const { body: { runId } } = await app.start('assisted');
+  assert.equal((await app.request(`/runs/${runId}/checks`)).body.ci.state, 'missing');
+  assert.equal((await app.request(`/runs/${runId}/checks`, { user: null })).status, 401);
+  assert.equal((await app.request(`/runs/${runId}/checks`, { user: 'user-b' })).status, 404);
+  assert.equal((await app.request(`/runs/${runId}/checks/refresh`, { user: 'outsider', body: {} })).status, 403);
+  assert.equal((await app.request(`/runs/${runId}/checks/refresh`, { user: 'user-b', body: {} })).status, 404);
+  const writes = app.mutations().length;
+  const refreshed = await app.request(`/runs/${runId}/checks/refresh`, { body: {} });
+  assert.equal(refreshed.status, 200); assert.equal(refreshed.body.ci.state, 'successful');
+  assert.equal((await app.request(`/runs/${runId}/checks/refresh`, { body: {} })).status, 429);
+  assert.equal(app.mutations().length, writes);
+  assert.ok((await getRun(runId, 'user-a')).events.some(e => e.step === 'github-checks'));
+});
+
+test('cancellation prevents the first GitHub mutation and is never permission to replay execution', async t => {
+  const { createRunDevSphere } = await import('../engines/orchestrator.js');
+  const { createQAAgent } = await import('../agents/qaAgent.js');
+  const { passedQA } = await import('./helpers/qa.js');
+  const app = await workflow(t, {}, { runDevSphere: createRunDevSphere({ qaAgent: createQAAgent({ execute: async () => passedQA.execution }), getRun: async () => ({ cancelRequested: true }) }) });
+  const result = await app.start('assisted'); assert.equal(result.status, 502);
+  assert.equal(app.mutations().length, 0); assert.equal((await getRun(result.body.runId, 'user-a')).status, 'cancelled');
 });

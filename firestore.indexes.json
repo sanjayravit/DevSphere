@@ -16,6 +16,8 @@
     { "collectionGroup": "devsphereRuns", "fieldPath": "plan", "indexes": [] },
     { "collectionGroup": "devsphereRuns", "fieldPath": "qa", "indexes": [] },
     { "collectionGroup": "devsphereRuns", "fieldPath": "usage", "indexes": [] },
+    { "collectionGroup": "devsphereRuns", "fieldPath": "ci", "indexes": [] },
+    { "collectionGroup": "devsphereRuns", "fieldPath": "providerMetrics", "indexes": [] },
     { "collectionGroup": "projects", "fieldPath": "files", "indexes": [] },
     { "collectionGroup": "projects", "fieldPath": "chatHistory", "indexes": [] },
     { "collectionGroup": "projects", "fieldPath": "commits", "indexes": [] },

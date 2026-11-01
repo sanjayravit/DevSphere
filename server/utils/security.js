@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 // Only match literal credentials, not environment-variable references or ordinary prose.
 const CREDENTIAL = /-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|\bBearer\s+[A-Za-z0-9._-]{20,}|(?:api[_-]?key|password|secret|token)\s*[:=]\s*["'`](?!\[REDACTED|\$\{)[^"'`\n]{8,}["'`]/i;
-const sensitiveEnvironment = ['OPENAI_API_KEY', 'GITHUB_TOKEN', 'JWT_SECRET', 'GEMINI_API_KEY', 'VERCEL_API_TOKEN', 'FIREBASE_PRIVATE_KEY', 'GITHUB_CLIENT_SECRET', 'GITHUB_WEBHOOK_SECRET', 'VERCEL_WEBHOOK_SECRET', 'REDIS_URL'];
+const sensitiveEnvironment = ['QA_RUNNER_TOKEN', 'OPENAI_API_KEY', 'GITHUB_TOKEN', 'JWT_SECRET', 'GEMINI_API_KEY', 'VERCEL_API_TOKEN', 'FIREBASE_PRIVATE_KEY', 'GITHUB_CLIENT_SECRET', 'GITHUB_WEBHOOK_SECRET', 'VERCEL_WEBHOOK_SECRET', 'REDIS_URL'];
 export const containsCredential = value => CREDENTIAL.test(String(value)) || sensitiveEnvironment.some(name => process.env[name]?.length >= 8 && String(value).includes(process.env[name]));
 
 export function redact(value) {
