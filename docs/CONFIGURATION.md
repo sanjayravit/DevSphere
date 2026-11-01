@@ -149,3 +149,39 @@ client rules already cover them. New `devsphereRuns.ci`/`providerMetrics` index
 exemptions are operator-reviewed optimizations, not deployed changes. See the
 [release and operations checklist](PRODUCTION-READINESS.md) for explicit project
 selection, retention, backup, recovery and rollback.
+
+### Troubleshooting `/api/auth/user` synchronization failures
+
+Firebase sign-in in the browser and backend session/profile synchronization are
+separate steps. A verified browser identity does not establish an application
+session until the Admin SDK verifies it (including revocation) and the profile
+read/write succeeds. Do not disable revocation checks or loosen Firestore client
+rules to work around a backend error; Admin access uses IAM, not those rules.
+
+A synchronization failure now returns a **string** `error`, a stable application
+`code`, and a `requestId`. Invalid/expired/revoked identities return 401
+(`INVALID_FIREBASE_TOKEN`); provider/Firestore availability failures return 503
+(`AUTH_SYNC_UNAVAILABLE`). Numeric Firestore/gRPC codes are handled without
+throwing a secondary error from the error handler. The login UI also accepts
+upstream `{error: {code, message}}` responses without rendering an object.
+
+Match the response `requestId` to the server log entry
+`Authentication synchronization failed`. It contains only `stage` and an
+allowlisted `providerCode`, not tokens, emails, raw provider errors or secrets:
+
+- `verify-token`: verify that browser Firebase configuration and Admin project
+  selection match, the Admin identity has the required Firebase Auth permissions,
+  and provider connectivity is available. Invalid user tokens still require a
+  fresh sign-in; no backend session is issued on failure.
+- `read-profile`, `create-profile`, `update-profile`: inspect the explicitly
+  selected Firestore database and the deployed Admin service account's IAM.
+  gRPC `7` means permission denied; `14` means unavailable; `4` means deadline
+  exceeded. Fix the actual cause rather than treating it as a bad password.
+- `sign-session`: inspect server-only session-signing configuration.
+
+The absence of a configured Admin app/database or JWT secret is separately
+reported as 503 before synchronization begins. After deploying this fix, capture
+only the HTTP status, application code, request ID and the corresponding safe
+stage/provider code for diagnosis. Never share the `idToken`, Authorization
+header, private key or complete unredacted network request. Local regression tests
+mock provider failures; they do not establish the cause of a hosted outage.
