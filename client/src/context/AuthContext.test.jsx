@@ -56,6 +56,21 @@ describe('authenticated session lifecycle', () => {
     await ready(); expect(api.get).toHaveBeenCalledWith('/auth/me', { headers: { Authorization: 'Bearer expired-test-session' } });
     expect(session.user).toBeNull(); expect(localStorage.getItem('token')).toBeNull(); expect(session.authError).toBe('Session expired.');
   });
+  it('refreshes an expired stored DevSphere session from a valid Firebase identity', async () => {
+    const user = firebaseUser('user-a');
+    state.auth.currentUser = user;
+    localStorage.setItem('token', 'expired-test-session');
+    api.get.mockRejectedValue({ response: { data: { error: 'Session expired.' } } });
+    api.post.mockResolvedValue({ data: { user: { id: 'user-a' }, token: 'fresh-backend-session' } });
+
+    await ready();
+
+    expect(api.get).toHaveBeenCalledWith('/auth/me', { headers: { Authorization: 'Bearer expired-test-session' } });
+    expect(api.post).toHaveBeenCalledWith('/auth/user', { idToken: 'mock-firebase-token-user-a' });
+    expect(session.user).toEqual({ id: 'user-a' });
+    expect(localStorage.getItem('token')).toBe('fresh-backend-session');
+    expect(session.authError).toBe('');
+  });
   it('an explicit OAuth backend session is verified and supersedes an older Firebase identity', async () => {
     await ready(); state.auth.currentUser = firebaseUser('old-account'); api.get.mockResolvedValue({ data: { id: 'oauth-account' } });
     await act(async () => { await session.acceptBackendToken('mock-oauth-token'); });
