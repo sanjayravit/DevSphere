@@ -20,7 +20,7 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-          <Suspense fallback={<div className="h-screen w-screen flex flex-col items-center justify-center bg-dark-900 text-primary-400 gap-4"><div className="w-12 h-12 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div><div className="font-medium tracking-widest text-sm">LOADING DEVPHERE…</div></div>}>
+          <Suspense fallback={<div className="h-screen w-screen flex flex-col items-center justify-center bg-dark-900 text-primary-400 gap-4"><div className="w-12 h-12 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div><div className="font-medium tracking-widest text-sm">LOADING DEVSPHERE…</div></div>}>
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginSignupPage />} />
