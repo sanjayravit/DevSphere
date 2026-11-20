@@ -45,7 +45,11 @@
     "socket.io-client": "^4.8.4"
   },
   "private": true,
+  "overrides": {
+    "jwks-rsa": "3.2.2"
+  },
   "engines": {
     "node": ">=22.13.0"
   }
 }
+
