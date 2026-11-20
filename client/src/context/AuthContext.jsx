@@ -54,8 +54,17 @@ export const AuthProvider = ({ children }) => {
       version.current += 1;
       const generation = version.current;
       try {
-        if (initial && localStorage.getItem('token')) await validateBackendToken(localStorage.getItem('token'), generation);
-        else if (fbUser) await syncUser(fbUser, undefined, generation);
+        if (initial && localStorage.getItem('token')) {
+          try {
+            await validateBackendToken(localStorage.getItem('token'), generation);
+          } catch (error) {
+            // A DevSphere session expires independently of the Firebase browser
+            // identity. When Firebase is still valid, refresh the backend
+            // session instead of signing the user out after a page reload.
+            if (!fbUser) throw error;
+            await syncUser(fbUser, undefined, generation);
+          }
+        } else if (fbUser) await syncUser(fbUser, undefined, generation);
         else setSession(null, null);
       } catch (error) {
         if (mounted && generation === version.current) {
