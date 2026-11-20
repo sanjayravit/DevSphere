@@ -43,6 +43,23 @@ test('existing workspace → project → versioned save journey preserves member
   assert.equal((await app.request('/workspaces', { method: 'POST', body: { name: {} } })).status, 400);
   assert.equal(app.provider.calls.length, 0);
 });
+test('workspace membership returns only safe owner display fields', async t => {
+  const app = await platform(t);
+  await app.database.collection('users').doc('user-a').create({
+    username: 'owner', name: 'Workspace Owner', avatar: 'https://example.test/avatar.png',
+    email: 'owner@example.test', password: 'private-password', accessToken: 'private-token'
+  });
+  const created = await app.request('/workspaces', { method: 'POST', body: { name: 'Private workspace' } });
+  assert.equal(created.status, 200);
+  const listed = await app.request('/workspaces');
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body[0].owner, {
+    id: 'user-a', username: 'owner', name: 'Workspace Owner', avatar: 'https://example.test/avatar.png'
+  });
+  assert.equal(listed.body[0].owner.email, undefined);
+  assert.equal(listed.body[0].owner.password, undefined);
+  assert.equal(listed.body[0].owner.accessToken, undefined);
+});
 test('AI project scaffolding failures do not silently fall back to a starter template or persist a fake generated project', async t => {
   const app = await platform(t, { gemini: (_call, state) => state.json(geminiResponse('')) });
   const workspace = await app.request('/workspaces', { method: 'POST', body: { name: 'Scaffold workspace' } });
