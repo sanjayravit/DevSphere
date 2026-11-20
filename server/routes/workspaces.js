@@ -31,7 +31,9 @@ router.get("/", auth, async (req, res) => {
             const owner = await User.findById(w.owner);
             return {
                 ...w,
-                owner: owner ? { id: owner.id, username: owner.username, email: owner.email } : w.owner
+                // Workspace members need a display identity, never an owner's email
+                // or other account-only data.
+                owner: owner ? { id: owner.id, username: owner.username, name: owner.name || '', avatar: owner.avatar || '' } : w.owner
             };
         }));
 
